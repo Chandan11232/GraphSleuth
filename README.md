@@ -183,17 +183,19 @@ OPTIONAL MATCH (p2:Person)-[:AUTHORED]->(:Commit)-[:MODIFIES]->(:File {path: f.f
 ...
 ```
 
-**Risky recent changes: untested functions touched by the last N commits**
+**Risky recent changes: untested functions touched by the last N commits, most-called first**
 ```cypher
 MATCH (c:Commit)
 WITH c ORDER BY c.timestamp DESC LIMIT $n
 MATCH (p:Person)-[:AUTHORED]->(c)-[:TOUCHED]->(f:Function)
 WHERE f.in_test_file = false
   AND NOT (:Test)-[:TESTS]->(f)
+WITH f, collect(DISTINCT p.name) AS changed_by, collect(c.message) AS commits,
+     max(c.timestamp) AS last_changed
+OPTIONAL MATCH (caller:Function)-[:CALLS]->(f)
 RETURN f.qualified_name AS function, f.file_path AS file,
-       collect(DISTINCT p.name) AS changed_by, collect(c.message) AS commits,
-       max(c.timestamp) AS last_changed
-ORDER BY last_changed DESC
+       changed_by, commits, last_changed, count(DISTINCT caller) AS callers
+ORDER BY callers DESC, last_changed DESC
 ```
 
 **Memory: recall earlier investigations of these functions or their neighbours**

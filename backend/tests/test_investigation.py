@@ -62,6 +62,8 @@ def test_risky_changes(graph):
     assert {r["function"] for r in risky.data} == {"notify_refund", "send_email"}
     assert all(r["changed_by"] == ["Lee Okafor"] for r in risky.data)
     assert risky.visited == {r["id"] for r in risky.data}
+    assert {r["function"]: r["callers"] for r in risky.data} == {"send_email": 1, "notify_refund": 1}
+
     # Looking further back finds more untested changes, never tested ones.
     older = {r["function"] for r in tools.risky_changes(9).data}
     assert {"notify_refund", "send_email"} < older

@@ -161,6 +161,7 @@ export interface RiskyChange {
   changed_by: string[]
   commits: string[]
   last_changed: number
+  callers: number
 }
 
 export interface Health {

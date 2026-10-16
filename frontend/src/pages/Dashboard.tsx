@@ -337,7 +337,8 @@ export function Dashboard() {
                   <div className="flex items-center justify-between gap-2">
                     <p className="font-mono text-xs truncate">{r.function}</p>
                     <span className="text-[11px] text-muted-foreground shrink-0">
-                      {r.changed_by.join(", ")}
+                      {r.changed_by.join(", ")} · {r.callers}{" "}
+                      {r.callers === 1 ? "caller" : "callers"}
                     </span>
                   </div>
                   <p

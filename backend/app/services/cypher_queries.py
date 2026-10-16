@@ -195,8 +195,8 @@ ORDER BY fn_commits DESC, file_commits DESC
 LIMIT 5
 """
 
-# Blast radius: transitive callers, the files they live in, and tests that would catch a regression.
-# Risky recent changes: untested functions touched by the last $n commits, with who changed them.
+# Risky recent changes: untested functions touched by the last $n commits, with who changed them
+# and how many functions call them (most-called first).
 RISKY_CHANGES = """
   MATCH (c:Commit)
   WITH c ORDER BY c.timestamp DESC LIMIT $n
@@ -216,6 +216,7 @@ RISKY_CHANGES = """
   ORDER BY callers DESC, last_changed DESC
 """
 
+# Blast radius: transitive callers, the files they live in, and tests that would catch a regression.
 BLAST_RADIUS = """
 MATCH (f:Function {id: $id})
 OPTIONAL MATCH (caller:Function)-[:CALLS*1..4]->(f)
