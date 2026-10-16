@@ -198,18 +198,22 @@ LIMIT 5
 # Blast radius: transitive callers, the files they live in, and tests that would catch a regression.
 # Risky recent changes: untested functions touched by the last $n commits, with who changed them.
 RISKY_CHANGES = """
-MATCH (c:Commit)
-WITH c ORDER BY c.timestamp DESC LIMIT $n
-MATCH (p:Person)-[:AUTHORED]->(c)-[:TOUCHED]->(f:Function)
-WHERE f.in_test_file = false
-  AND NOT (:Test)-[:TESTS]->(f)
-RETURN f.id AS id,
-       f.qualified_name AS function,
-       f.file_path AS file,
+  MATCH (c:Commit)
+  WITH c ORDER BY c.timestamp DESC LIMIT $n
+  MATCH (p:Person)-[:AUTHORED]->(c)-[:TOUCHED]->(f:Function)
+  WHERE f.in_test_file = false
+    AND NOT (:Test)-[:TESTS]->(f)
+  WITH f,
        collect(DISTINCT p.name) AS changed_by,
        collect(c.message) AS commits,
        max(c.timestamp) AS last_changed
-ORDER BY last_changed DESC
+  OPTIONAL MATCH (caller:Function)-[:CALLS]->(f)
+  RETURN f.id AS id,
+         f.qualified_name AS function,
+         f.file_path AS file,
+         changed_by, commits, last_changed,
+         count(DISTINCT caller) AS callers
+  ORDER BY callers DESC, last_changed DESC
 """
 
 BLAST_RADIUS = """
