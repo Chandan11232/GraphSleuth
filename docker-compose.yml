@@ -1,0 +1,48 @@
+services:
+  falkordb:
+    image: falkordb/falkordb:latest
+    ports:
+      - "6379:6379"   # Redis protocol (Cypher via GRAPH.QUERY)
+      - "3001:3000"   # FalkorDB Browser: http://localhost:3001
+    volumes:
+      - falkordb-data:/var/lib/falkordb/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      FALKORDB_HOST: falkordb
+      FALKORDB_PORT: 6379
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+      OLLAMA_API_KEY: ${OLLAMA_API_KEY:-}
+      OLLAMA_AGENT_MODEL: ${OLLAMA_AGENT_MODEL:-qwen2.5-coder:7b}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5-coder:7b}
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-1m}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      CORS_ORIGINS: http://localhost:3000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./demo:/demo   # lets you connect /demo/acme-shop as a local repository
+    depends_on:
+      falkordb:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      API_PROXY_TARGET: http://backend:8000
+    depends_on:
+      - backend
+
+volumes:
+  falkordb-data:

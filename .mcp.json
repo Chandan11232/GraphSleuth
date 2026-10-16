@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "codebase-detective": {
+      "command": "backend/venv/bin/python",
+      "args": ["-m", "app.mcp_server"],
+      "cwd": "backend",
+      "env": { "FALKORDB_HOST": "localhost", "FALKORDB_PORT": "6379" }
+    }
+  }
+}
