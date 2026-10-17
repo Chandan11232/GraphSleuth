@@ -320,15 +320,19 @@ class GraphTools:
                                              "discussions": discussions},
                           f"{fn['name']}: " + ("; ".join(parts) if parts else "no history on record"),
                           [compact(Q.FUNCTION_HISTORY), compact(Q.PR_CONTEXT), compact(Q.DECISIONS),
-                           compact(Q.DECISION_DRIFT), compact(Q.FUNCTION_DISCUSSIONS)], visited)
+                           compact(Q.DECISION_FUNCTIONS), compact(Q.DECISION_DRIFT), compact(Q.FUNCTION_DISCUSSIONS)],
+                          visited)
 
     def decisions(self, limit: int = 50) -> ToolResult:
         rows = self._ro(Q.DECISIONS, {"limit": limit})
         drift: Dict[str, List[Dict[str, Any]]] = {}
         for r in self._ro(Q.DECISION_DRIFT, {}) if rows else []:
             drift.setdefault(r.pop("id"), []).append(r)
+        governs: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        for r in self._ro(Q.DECISION_FUNCTIONS, {"ids": [d["id"] for d in rows]}) if rows else []:
+            governs.setdefault(r["id"], {})[r["fn_id"]] = {"id": r["fn_id"], "name": r["name"]}
         for d in rows:
-            fns = {f["id"]: f for f in d.pop("about") + d.pop("changed") if f["id"]}
+            fns = governs.get(d["id"], {})
             d["functions"] = list(fns.values())
             d["function_ids"] = list(fns)
             seen = set()
@@ -344,7 +348,8 @@ class GraphTools:
         return ToolResult("decisions", {"limit": limit}, rows,
                           f"{len(rows)} decision(s) on record" + (f"; {len(drifted)} govern code that has changed since"
                                                                  if drifted else ""),
-                          [compact(Q.DECISIONS), compact(Q.DECISION_DRIFT)], {d["id"] for d in rows})
+                          [compact(Q.DECISIONS), compact(Q.DECISION_FUNCTIONS), compact(Q.DECISION_DRIFT)],
+                          {d["id"] for d in rows})
 
     def who_owns(self, target: str) -> ToolResult:
         """Who to ask about a file or function: CODEOWNERS teams and people, authors, and reviewers."""

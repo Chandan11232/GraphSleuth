@@ -260,10 +260,11 @@ RETURN row.id AS id, row.score / top AS centrality
 FEATURES_FOR = """
 UNWIND $ids AS fid
 MATCH (f:Function {id: fid})
+OPTIONAL MATCH (caller:Function)-[:CALLS]->(f)
+WITH f, count(DISTINCT caller) AS fan_in
+OPTIONAL MATCH (f)-[:CALLS]->(callee:Function)
 RETURN f.id AS id, f.qualified_name AS name, f.file_path AS file_path, f.start_line AS start_line,
-       f.complexity AS complexity, f.loc AS loc,
-       size([(c:Function)-[:CALLS]->(f) | c]) AS fan_in,
-       size([(f)-[:CALLS]->(c:Function) | c]) AS fan_out
+       f.complexity AS complexity, f.loc AS loc, fan_in, count(DISTINCT callee) AS fan_out
 """
 
 # --------------------------------------------------------------------------
@@ -628,8 +629,7 @@ ORDER BY number DESC
 LIMIT 10
 """
 
-# Every decision, where it was made, and the code it governs: functions its sentence names, and
-# functions changed by the pull request it was made in (or that fixed the issue it was made in).
+# Every decision and where it was made.
 DECISIONS = """
 MATCH (d:Decision)-[:DECIDED_IN]->(src)
 OPTIONAL MATCH (src)-[:ON]->(parent)
@@ -637,13 +637,32 @@ WITH d, src, coalesce(parent, src) AS item
 OPTIONAL MATCH (who:Person)-[:DECIDED]->(d)
 RETURN d.id AS id, d.text AS text, d.url AS url, d.at_ms AS at_ms, who.name AS author,
        labels(item)[0] AS item_type, item.id AS item_id, item.number AS item_number, item.title AS item_title,
-       labels(src)[0] AS source_type,
-       [(d)-[:ABOUT]->(f:Function) | {id: f.id, name: f.qualified_name}] AS about,
-       [(item)-[:INCLUDES]->(:Commit)-[:TOUCHED]->(f:Function) | {id: f.id, name: f.qualified_name}]
-       + [(item)<-[:FIXES]-(:PullRequest)-[:INCLUDES]->(:Commit)-[:TOUCHED]->(f:Function)
-          | {id: f.id, name: f.qualified_name}] AS changed
+       labels(src)[0] AS source_type
 ORDER BY at_ms DESC
 LIMIT $limit
+"""
+
+# The code a decision governs: functions its sentence names, functions changed by the pull request
+# it was made in, and functions changed by the pull request that fixed the issue it was made in.
+# (Plain MATCHes rather than pattern comprehensions, which newer FalkorDB versions evaluate differently.)
+DECISION_FUNCTIONS = """
+UNWIND $ids AS did
+MATCH (d:Decision {id: did})-[:ABOUT]->(f:Function)
+RETURN d.id AS id, f.id AS fn_id, f.qualified_name AS name
+UNION
+UNWIND $ids AS did
+MATCH (d:Decision {id: did})-[:DECIDED_IN]->(src)
+OPTIONAL MATCH (src)-[:ON]->(parent)
+WITH d, coalesce(parent, src) AS item
+MATCH (item)-[:INCLUDES]->(:Commit)-[:TOUCHED]->(f:Function)
+RETURN d.id AS id, f.id AS fn_id, f.qualified_name AS name
+UNION
+UNWIND $ids AS did
+MATCH (d:Decision {id: did})-[:DECIDED_IN]->(src)
+OPTIONAL MATCH (src)-[:ON]->(parent)
+WITH d, coalesce(parent, src) AS item
+MATCH (item)<-[:FIXES]-(:PullRequest)-[:INCLUDES]->(:Commit)-[:TOUCHED]->(f:Function)
+RETURN d.id AS id, f.id AS fn_id, f.qualified_name AS name
 """
 
 # Knowledge drift: code a decision governs that has been changed since, by commits from outside
