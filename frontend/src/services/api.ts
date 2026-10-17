@@ -41,7 +41,7 @@ export interface RepositoryStats {
 export interface AnalysisStep {
   step: number
   action: string
-  actor: 'agent' | 'llm'
+  actor: 'agent' | 'llm' | 'sandbox'
   tool: string | null
   args: Record<string, any> | null
   query: string
@@ -97,6 +97,7 @@ export interface Fix {
   tests: string[]
   history?: CodeHistory
   owners?: Ownership | null
+  patched_code?: string
 }
 
 export interface InvestigationResult {
@@ -280,4 +281,117 @@ export interface BrainOverview {
   decisions: Decision[]
   knowledge_gaps: { path: string; only_author: string; owners: number; callers: number }[]
   summaries: { decisions: string; knowledge_gaps: string }
+}
+
+export interface ImpactedTest {
+  id: string
+  name: string
+  file_path: string
+  distance: number
+}
+
+export interface FixDraft {
+  function: { id: string; name: string; file_path: string; start_line: number; end_line: number }
+  original_code: string
+  patched_code: string
+  diff: string
+  test_path: string
+  test_code: string
+  test_model: string | null
+  impacted_tests: ImpactedTest[]
+  total_tests: number
+  cypher: string
+  supported: boolean
+  blocked: string | null
+  note: string | null
+  can_open_pr: boolean
+  server_token: boolean
+}
+
+export type Outcome = 'passed' | 'failed' | 'error' | 'skipped' | 'missing'
+
+export interface TestComparison {
+  file_path: string
+  name: string
+  regression: boolean
+  before: Outcome
+  after: Outcome
+  before_message: string
+  after_message: string
+}
+
+export interface TestRunSummary {
+  command: string
+  exit_code: number
+  timed_out: boolean
+  duration_ms: number
+  passed: number
+  failed: number
+  error: number
+  output: string
+}
+
+export interface PullRequestDraft {
+  title: string
+  branch: string
+  body: string
+  reviewers: { name: string; login: string | null; why: string }[]
+  fixes_issues: number[]
+}
+
+export interface Verification {
+  id: string
+  investigation_id: string
+  status: 'verified' | 'regresses' | 'not_fixed' | 'not_reproduced' | 'no_regressions' | 'error'
+  headline: string
+  explanation: string
+  diff: string
+  patched_code: string
+  files: Record<string, string>
+  test_path: string
+  test_code: string
+  selected_tests: ImpactedTest[]
+  total_tests: number
+  comparison: TestComparison[]
+  before: TestRunSummary
+  after: TestRunSummary
+  base_commit: string
+  pr_draft: PullRequestDraft
+  pull_request: { number: number; url: string; branch: string; draft: boolean; review_note: string | null } | null
+  steps: AnalysisStep[]
+  created_at: string
+  duration_ms?: number
+}
+
+/** POST that answers with server-sent events (EventSource only does GET). */
+export async function postEvents(path: string, body: unknown, onEvent: (ev: any) => void): Promise<void> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok || !res.body) {
+    let detail = `Request failed (${res.status})`
+    try {
+      detail = (await res.json()).detail || detail
+    } catch {
+      /* not JSON */
+    }
+    throw new Error(detail)
+  }
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    let at
+    while ((at = buf.indexOf('\n\n')) >= 0) {
+      const chunk = buf.slice(0, at)
+      buf = buf.slice(at + 2)
+      const data = chunk.split('\n').filter(l => l.startsWith('data: ')).map(l => l.slice(6)).join('\n')
+      if (data && data !== '[DONE]') onEvent(JSON.parse(data))
+    }
+  }
 }

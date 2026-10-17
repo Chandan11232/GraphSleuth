@@ -20,6 +20,7 @@ from app.services import store
 from app.services.agent import Investigation, new_id
 from app.services.brain import Brain
 from app.services.graph_tools import GraphTools, ToolResult
+from app.services.verifier import Verification, impacted_tests
 
 # stdout carries the MCP protocol, so every log line must go to stderr.
 # (structlog loggers are lazy, so configuring after the imports still applies.)
@@ -31,7 +32,8 @@ mcp = FastMCP(
     instructions=(
         "Tools over a FalkorDB code graph (functions, CALLS, tests, commits, authors), the team knowledge around it "
         "(issues, pull requests, reviews, decisions, CODEOWNERS) and a memory of past bug investigations. Start with "
-        "list_repositories, then search_code / investigate_bug, or ask_company_brain / why_code / who_owns. Pass "
+        "list_repositories, then search_code / investigate_bug, or ask_company_brain / why_code / who_owns. After an "
+        "investigation, write the corrected function and a regression test and prove them with verify_fix. Pass "
         "the repository name or id to every tool. Each result includes the Cypher that produced it."
     ),
 )
@@ -209,12 +211,61 @@ def confirm_root_cause(repository: str, investigation_id: str, function: str, no
 
 
 @mcp.tool()
+def select_tests(repository: str, function: str) -> str:
+    """Test impact analysis: the tests whose TESTS edge reaches the function directly or through up to 3 CALLS
+    hops, i.e. the tests a change to it can break."""
+    repo = _repo(repository)
+    fn = GraphTools(repo["graph_name"]).resolve(function)
+    if not fn:
+        return f"No function matching '{function}'"
+    impact = impacted_tests(repo["graph_name"], fn["id"])
+    return json.dumps({"function": fn, "selected": impact["tests"], "total_tests": impact["total"],
+                       "cypher": Q.TEST_IMPACT.strip()}, default=str, indent=1)
+
+
+@mcp.tool()
+async def verify_fix(repository: str, investigation_id: str, patched_code: str, test_code: str = "") -> str:
+    """Prove a fix for an investigation's root cause in a sandbox copy of the repository. patched_code is the
+    complete corrected root-cause function; test_code is a pytest regression test that should fail on the
+    current code and pass with the fix. Runs it and the graph-selected tests before and after the patch, and
+    saves the outcome (Fix, TestRun) to the graph. A verified fix confirms the root cause in shared memory."""
+    from app.api.routes.investigations import load_investigation
+    from app.services.sandbox import verification_allowed
+
+    repo = _repo(repository)
+    inv = load_investigation(investigation_id)
+    if not inv:
+        return "Investigation not found"
+    blocked = verification_allowed(repo["url"])
+    if blocked:
+        return blocked
+    result: Dict[str, Any] = {}
+    errors: List[str] = []
+    steps: List[str] = []
+    async for event in Verification(repo, inv, patched_code=patched_code, test_code=test_code).run():
+        if event["type"] == "step":
+            steps.append(f"{event['step']['action']}: {event['step']['result_summary']}")
+        elif event["type"] == "error":
+            errors.append(event["message"])
+        elif event["type"] == "result":
+            result = event["result"]
+    if errors:
+        return json.dumps({"error": errors[-1], "steps": steps}, indent=1)
+    return json.dumps({
+        "fix_id": result["id"], "status": result["status"], "headline": result["headline"],
+        "comparison": result["comparison"], "diff": result["diff"], "pull_request_draft": result["pr_draft"],
+        "steps": steps,
+        "failures": [t for t in result["after"]["tests"] if t["outcome"] != "passed"],
+    }, default=str, indent=1)
+
+
+@mcp.tool()
 def run_cypher(repository: str, query: str) -> str:
     """Run a read-only Cypher query against the repository's code graph (GRAPH.RO_QUERY).
     Labels: Function, Class, File, Test, Commit, Person, BugReport, Investigation, Team, Issue, PullRequest,
-    Comment, Decision.
+    Comment, Decision, Fix, TestRun.
     Edges: CALLS, CONTAINS, HAS_METHOD, IMPORTS, TESTS, MODIFIES, TOUCHED, AUTHORED, MENTIONS,
-    INVESTIGATED_IN, SUSPECTS, CONFIRMED, MEMBER_OF, OWNS, OPENED, REVIEWED, WROTE, ON, ABOUT, FIXES,
+    INVESTIGATED_IN, SUSPECTS, CONFIRMED, PROPOSED, PATCHES, VERIFIED_BY, RAN, OPENED_AS, MEMBER_OF, OWNS, OPENED, REVIEWED, WROTE, ON, ABOUT, FIXES,
     REFERENCES, INCLUDES, DECIDED_IN, DECIDED."""
     rows = get_falkordb().ro(_repo(repository)["graph_name"], query)
     return json.dumps(rows[:100], default=str, indent=1)

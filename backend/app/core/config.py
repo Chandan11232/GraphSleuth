@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     # When set, local repositories must live under this directory (set it on public deployments).
     LOCAL_REPOS_ROOT: Optional[str] = None
 
+    # Fix verification runs a repository's tests in a sandbox copy. "local": only repositories connected
+    # from a server directory (safe default), "all": also clone and run GitHub repositories (run the API in a
+    # disposable container), "off": never run tests.
+    VERIFY_FIXES: str = "local"
+    VERIFY_TIMEOUT_SECONDS: int = 60
+    VERIFY_MEMORY_MB: int = 1024
+
     CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     API_V1_PREFIX: str = "/api/v1"

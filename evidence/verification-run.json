@@ -1,0 +1,334 @@
+{
+ "captured_at": "2026-10-17T16:03:29.697624+00:00",
+ "api": "http://localhost:8000/api/v1",
+ "server": {
+  "version": "2.0.0",
+  "llm": {
+   "enabled": false,
+   "host": "http://127.0.0.1:11434",
+   "models": [],
+   "agent_model": null
+  }
+ },
+ "repository": {
+  "name": "acme-shop",
+  "stats": {
+   "files": 12,
+   "lang_python": 12,
+   "functions": 23,
+   "tests": 4,
+   "classes": 3,
+   "calls": 24,
+   "test_links": 5,
+   "imports": 18,
+   "commits": 9,
+   "commit_function_links": 25,
+   "people": 4,
+   "knowledge_issues": 4,
+   "pull_requests": 9,
+   "knowledge_comments": 7,
+   "knowledge_reviews": 9,
+   "knowledge_teams": 4,
+   "fixes_links": 3,
+   "references": 2,
+   "function_mentions": 20,
+   "decisions": 2,
+   "pr_commit_links": 9,
+   "owned_files": 12
+  }
+ },
+ "investigation": {
+  "id": "b748255e-13c8-4dbe-8cf7-652ca83b6d31",
+  "mode": "graph",
+  "verdict": {
+   "id": "a8b1041f8950029b",
+   "name": "process_refund",
+   "file_path": "shop/payments/refunds.py",
+   "explanation": "process_refund in shop/payments/refunds.py scores highest (0.62). It is named in the report or sits on the stack trace. It was recently changed by Dana Kim (\"Refactor refund flow: notify customer, simplify order lookup\").",
+   "confidence": 0.79,
+   "source": "graph"
+  },
+  "steps": [
+   "parse_bug_report: 3 stack frame(s), identifiers: handle_refund_request, process_refund, validate_refund_amount, TypeError, NoneType; keywords: refunding, unknown, order, exist, shop, api, handlers, handle",
+   "match_stack_frames: 3/3 frames matched: handle_refund_request, process_refund, validate_refund_amount",
+   "match_identifiers: 3 exact match(es): handle_refund_request, validate_refund_amount, process_refund",
+   "search_code: 8 functions match; best: handle_refund_request, handle_order_status, process_refund",
+   "get_callees: validate_refund_amount calls 0 repo functions within 1 hop(s)",
+   "get_callers: 2 functions reach validate_refund_amount within 2 call(s): process_refund, handle_refund_request",
+   "get_callees: process_refund calls 6 repo functions within 1 hop(s): find_order, mark_refunded, notify_refund, refund_card, restock_items",
+   "get_callers: 1 functions reach process_refund within 2 call(s): handle_refund_request",
+   "get_callees: handle_refund_request calls 1 repo functions within 1 hop(s): process_refund",
+   "get_callers: 0 functions reach handle_refund_request within 2 call(s)",
+   "get_tests: 8/10 functions have tests; untested: handle_order_status, handle_refund_request",
+   "recent_changes: 10/10 functions have commit history; most recent: process_refund (Dana Kim: \"Refactor refund flow: notify customer, simplify or\")",
+   "graph_algorithms: Most central candidates: process_refund (0.51), validate_refund_amount (0.35), mark_refunded (0.35)",
+   "recall_past_investigations: 0 related past investigation(s) in memory",
+   "rank_suspects: Top suspects: process_refund (0.62), handle_refund_request (0.55), validate_refund_amount (0.51)",
+   "verdict: Root cause: process_refund (confidence 79%)",
+   "blast_radius: Changing process_refund affects 1 functions in 1 files; 1 tests would exercise it",
+   "find_experts: People who changed process_refund: Dana Kim, Priya Raman",
+   "code_history: process_refund: last changed in PR #12 \"Refactor refund flow: notify customer, simplify order lookup\" by Dana Kim (approved by Lee Okafor); 1 decision(s) apply, 1 possibly outdated; open: #13 Refunding a deleted order returns 500",
+   "who_owns: shop/payments/refunds.py: owned by @payments; ask Dana Kim, Priya Raman, Lee Okafor",
+   "generate_fix: Patch skipped",
+   "save_memory: Investigation stored; took 0.2s"
+  ]
+ },
+ "fix_source": "supplied by the caller (as an MCP client would)",
+ "draft": {
+  "impacted_tests": [
+   {
+    "id": "708a6e016c9bf0d2",
+    "name": "test_full_refund_marks_order_refunded",
+    "file_path": "tests/test_refunds.py",
+    "distance": 0
+   }
+  ],
+  "total_tests": 4,
+  "test_path": "tests/test_regression_b748255e.py",
+  "cypher": "MATCH (f:Function {id: $id})\nMATCH p = (t:Test)-[:TESTS]->(:Function)-[:CALLS*0..3]->(f)\nWITH t, min(length(p)) AS hops\nRETURN t.id AS id, t.name AS name, t.file_path AS file_path, hops - 1 AS distance\nORDER BY distance, file_path, name"
+ },
+ "verification": {
+  "id": "2902ab47-17a6-4a7f-baf9-774eae0d7d1a",
+  "status": "verified",
+  "headline": "regression test failed \u2192 passed; 1/1 selected tests still pass",
+  "comparison": [
+   {
+    "file_path": "tests/test_regression_b748255e.py",
+    "name": "test_refund_of_unknown_order_raises_order_not_found",
+    "regression": true,
+    "before": "failed",
+    "after": "passed",
+    "before_message": "TypeError: 'NoneType' object is not subscriptable",
+    "after_message": ""
+   },
+   {
+    "file_path": "tests/test_refunds.py",
+    "name": "test_full_refund_marks_order_refunded",
+    "regression": false,
+    "before": "passed",
+    "after": "passed",
+    "before_message": "",
+    "after_message": ""
+   }
+  ],
+  "diff": "--- a/shop/payments/refunds.py\n+++ b/shop/payments/refunds.py\n@@ -1,5 +1,5 @@\n \"\"\"Refund processing.\"\"\"\n-from shop.orders import find_order, mark_refunded\n+from shop.orders import find_order, mark_refunded, get_order\n from shop.payments.gateway import refund_card\n from shop.inventory import restock_items\n from shop.notifications import notify_refund\n@@ -13,7 +13,7 @@\n \n def process_refund(order_id, amount):\n     \"\"\"Refund part or all of an order and notify the customer.\"\"\"\n-    order = find_order(order_id)\n+    order = get_order(order_id)\n     validate_refund_amount(order, amount)\n     receipt = refund_card(order[\"customer\"], amount)\n     mark_refunded(order, amount)\n",
+  "base_commit": "917e4225abcf5312d36f847b0265fc1345026bb7",
+  "duration_ms": 798
+ },
+ "verification_steps": [
+  {
+   "step": 1,
+   "action": "select_tests",
+   "actor": "sandbox",
+   "tool": null,
+   "args": null,
+   "query": "MATCH (f:Function {id: $id})\nMATCH p = (t:Test)-[:TESTS]->(:Function)-[:CALLS*0..3]->(f)\nWITH t, min(length(p)) AS hops\nRETURN t.id AS id, t.name AS name, t.file_path AS file_path, hops - 1 AS distance\nORDER BY distance, file_path, name",
+   "result_summary": "1 of 4 tests selected: test_full_refund_marks_order_refunded",
+   "reasoning": "Test impact analysis on the graph: the tests whose TESTS edge reaches process_refund directly or through up to 3 CALLS hops are the ones this change can break. Only those are run.",
+   "data": [
+    {
+     "id": "708a6e016c9bf0d2",
+     "name": "test_full_refund_marks_order_refunded",
+     "file_path": "tests/test_refunds.py",
+     "distance": 0
+    }
+   ],
+   "timestamp": "2026-10-17T16:03:28.865945+00:00"
+  },
+  {
+   "step": 2,
+   "action": "prepare_sandbox",
+   "actor": "sandbox",
+   "tool": null,
+   "args": null,
+   "query": "",
+   "result_summary": "Sandbox ready at commit 917e4225ab",
+   "reasoning": "Copied the repository into a throwaway directory. Tests run in a child process with a scrubbed environment (no server credentials), its own HOME, CPU and file-size limits and a 60s timeout.",
+   "data": {
+    "head": "917e4225abcf5312d36f847b0265fc1345026bb7"
+   },
+   "timestamp": "2026-10-17T16:03:28.968017+00:00"
+  },
+  {
+   "step": 3,
+   "action": "write_regression_test",
+   "actor": "sandbox",
+   "tool": null,
+   "args": null,
+   "query": "",
+   "result_summary": "Wrote tests/test_regression_b748255e.py",
+   "reasoning": "Added a regression test that reproduces the reported bug. It should fail on the original code and pass once the fix is in.",
+   "data": {
+    "path": "tests/test_regression_b748255e.py"
+   },
+   "timestamp": "2026-10-17T16:03:28.968973+00:00"
+  },
+  {
+   "step": 4,
+   "action": "baseline_run",
+   "actor": "sandbox",
+   "tool": null,
+   "args": null,
+   "query": "",
+   "result_summary": "1 passed, 1 failed in 0.4s",
+   "reasoning": "Ran the regression test and the selected tests on the original code, to see the bug happen and to know which tests passed before the change.",
+   "data": {
+    "command": "python -m pytest tests/test_regression_b748255e.py tests/test_refunds.py::test_full_refund_marks_order_refunded",
+    "exit_code": 1,
+    "timed_out": false,
+    "duration_ms": 354,
+    "tests": [
+     {
+      "name": "test_refund_of_unknown_order_raises_order_not_found",
+      "file_path": "tests/test_regression_b748255e.py",
+      "outcome": "failed",
+      "message": "TypeError: 'NoneType' object is not subscriptable",
+      "duration_ms": 0
+     },
+     {
+      "name": "test_full_refund_marks_order_refunded",
+      "file_path": "tests/test_refunds.py",
+      "outcome": "passed",
+      "message": "",
+      "duration_ms": 0
+     }
+    ],
+    "passed": 1,
+    "failed": 1,
+    "error": 0,
+    "skipped": 0,
+    "collection_errors": [],
+    "output": "F.                                                                       [100%]\n=================================== FAILURES ===================================\n_____________ test_refund_of_unknown_order_raises_order_not_found ______________\n\n    def test_refund_of_unknown_order_raises_order_not_found():\n        with pytest.raises(OrderNotFound):\n>           process_refund(\"does-not-exist\", 5.0)\n\ntests/test_regression_b748255e.py:9: \n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \nshop/payments/refunds.py:17: in process_refund\n    validate_refund_amount(order, amount)\n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \n\norder = None, amount = 5.0\n\n    def validate_refund_amount(order, amount):\n>       remaining = order[\"total\"] - order[\"refunded\"]\nE       TypeError: 'NoneType' object is not subscriptable\n\nshop/payments/refunds.py:9: TypeError\n- generated xml file: /private/var/folders/fz/zbhzj7w51h356t0dnl7k1b640000gn/T/cd-sandbox-eawi27jf/report-1792253008969293000.xml -\n=========================== short test summary info ============================\nFAILED tests/test_regression_b748255e.py::test_refund_of_unknown_order_raises_order_not_found - TypeError: 'NoneType' object is not subscriptable\n1 failed, 1 passed in 0.03s\n"
+   },
+   "timestamp": "2026-10-17T16:03:29.325061+00:00"
+  },
+  {
+   "step": 5,
+   "action": "apply_patch",
+   "actor": "sandbox",
+   "tool": null,
+   "args": null,
+   "query": "MATCH (n) WHERE (n:Function OR n:Class) AND n.name IN $names AND n.file_path ENDS WITH '.py'\n  AND NOT n.file_path CONTAINS 'test'\n  AND (n:Class OR n.qualified_name = n.name)\nRETURN n.name AS name, n.file_path AS file_path",
+   "result_summary": "Patched shop/payments/refunds.py; added get_order to `from shop.orders import ...`",
+   "reasoning": "Replaced process_refund with the corrected version, located by its line span and source from the graph. The patch uses names the file never imports; the graph says where each is defined, so the imports were added.",
+   "data": {
+    "diff": "--- a/shop/payments/refunds.py\n+++ b/shop/payments/refunds.py\n@@ -1,5 +1,5 @@\n \"\"\"Refund processing.\"\"\"\n-from shop.orders import find_order, mark_refunded\n+from shop.orders import find_order, mark_refunded, get_order\n from shop.payments.gateway import refund_card\n from shop.inventory import restock_items\n from shop.notifications import notify_refund\n@@ -13,7 +13,7 @@\n \n def process_refund(order_id, amount):\n     \"\"\"Refund part or all of an order and notify the customer.\"\"\"\n-    order = find_order(order_id)\n+    order = get_order(order_id)\n     validate_refund_amount(order, amount)\n     receipt = refund_card(order[\"customer\"], amount)\n     mark_refunded(order, amount)\n",
+    "imports": [
+     {
+      "name": "get_order",
+      "module": "shop.orders",
+      "defined_in": "shop/orders.py",
+      "how": "added get_order to `from shop.orders import ...`"
+     }
+    ]
+   },
+   "timestamp": "2026-10-17T16:03:29.332443+00:00"
+  },
+  {
+   "step": 6,
+   "action": "patched_run",
+   "actor": "sandbox",
+   "tool": null,
+   "args": null,
+   "query": "",
+   "result_summary": "2 passed, 0 failed in 0.3s",
+   "reasoning": "Ran the same tests with the fix applied.",
+   "data": {
+    "command": "python -m pytest tests/test_regression_b748255e.py tests/test_refunds.py::test_full_refund_marks_order_refunded",
+    "exit_code": 0,
+    "timed_out": false,
+    "duration_ms": 290,
+    "tests": [
+     {
+      "name": "test_refund_of_unknown_order_raises_order_not_found",
+      "file_path": "tests/test_regression_b748255e.py",
+      "outcome": "passed",
+      "message": "",
+      "duration_ms": 1
+     },
+     {
+      "name": "test_full_refund_marks_order_refunded",
+      "file_path": "tests/test_refunds.py",
+      "outcome": "passed",
+      "message": "",
+      "duration_ms": 0
+     }
+    ],
+    "passed": 2,
+    "failed": 0,
+    "error": 0,
+    "skipped": 0,
+    "collection_errors": [],
+    "output": "..                                                                       [100%]\n- generated xml file: /private/var/folders/fz/zbhzj7w51h356t0dnl7k1b640000gn/T/cd-sandbox-eawi27jf/report-1792253009332734000.xml -\n2 passed in 0.01s\n"
+   },
+   "timestamp": "2026-10-17T16:03:29.624239+00:00"
+  },
+  {
+   "step": 7,
+   "action": "judge",
+   "actor": "sandbox",
+   "tool": null,
+   "args": null,
+   "query": "",
+   "result_summary": "regression test failed \u2192 passed; 1/1 selected tests still pass",
+   "reasoning": "Verified: the regression test failed on the original code and passes with the fix, and no selected test broke.",
+   "data": {
+    "status": "verified",
+    "headline": "regression test failed \u2192 passed; 1/1 selected tests still pass",
+    "comparison": [
+     {
+      "file_path": "tests/test_regression_b748255e.py",
+      "name": "test_refund_of_unknown_order_raises_order_not_found",
+      "regression": true,
+      "before": "failed",
+      "after": "passed",
+      "before_message": "TypeError: 'NoneType' object is not subscriptable",
+      "after_message": ""
+     },
+     {
+      "file_path": "tests/test_refunds.py",
+      "name": "test_full_refund_marks_order_refunded",
+      "regression": false,
+      "before": "passed",
+      "after": "passed",
+      "before_message": "",
+      "after_message": ""
+     }
+    ],
+    "broken": []
+   },
+   "timestamp": "2026-10-17T16:03:29.624492+00:00"
+  },
+  {
+   "step": 8,
+   "action": "save_to_graph",
+   "actor": "agent",
+   "tool": null,
+   "args": null,
+   "query": "MATCH (i:Investigation {id: $investigation_id}), (f:Function {id: $fn_id})\nCREATE (x:Fix {id: $id, status: $status, summary: $summary, created_at: $created_at, payload: $payload})\nCREATE (i)-[:PROPOSED]->(x)\nCREATE (x)-[:PATCHES]->(f)\nRETURN x.id AS id\n\nMATCH (x:Fix {id: $fix_id})\nCREATE (r:TestRun {id: $id, phase: $phase, passed: $passed, failed: $failed, errors: $errors,\n                   duration_ms: $duration_ms, at: $at})\nCREATE (x)-[:VERIFIED_BY {phase: $phase}]->(r)\nRETURN r.id AS id\n\nUNWIND $rows AS row\nMATCH (r:TestRun {id: $run_id}), (t:Test {id: row.test_id})\nCREATE (r)-[:RAN {outcome: row.outcome}]->(t)\n\nMATCH (i:Investigation {id: $investigation_id}), (f:Function {id: $fn_id})\nMERGE (i)-[c:CONFIRMED]->(f)\nSET c.at = timestamp(), c.note = $note, c.source = 'verification'\nSET i.status = 'confirmed'\nRETURN f.qualified_name AS name",
+   "result_summary": "Fix 2902ab47 stored as 'verified'",
+   "reasoning": "Saved the fix and both test runs: (Investigation)-[:PROPOSED]->(Fix)-[:VERIFIED_BY]->(TestRun)-[:RAN]->(Test). The fix is proven, so the root cause is now CONFIRMED in agent memory and future investigations of this code start from it.",
+   "data": null,
+   "timestamp": "2026-10-17T16:03:29.633678+00:00"
+  }
+ ],
+ "human_gate": {
+  "request": {
+   "approve": false
+  },
+  "status_code": 400,
+  "response": {
+   "detail": "Opening a pull request needs explicit approval (approve=true)."
+  }
+ },
+ "memory_after": {
+  "status": "confirmed",
+  "confirmed": [
+   {
+    "id": "a8b1041f8950029b",
+    "name": "process_refund",
+    "note": "verified: a regression test failed on the original code and passed with the fix"
+   }
+  ]
+ }
+}

@@ -5,6 +5,15 @@ the agent walks the graph of your repository (functions, calls, tests, commits a
 the root cause. It shows every hop as a Cypher query, then suggests a patch, reviewers, and what else the fix could break.
 It remembers every investigation in the graph, so the next bug in the same area starts with that history.
 
+Then it **closes the loop**. It proves the fix in a sandbox before anyone opens a pull request:
+- The graph picks the tests that can reach the root cause (`TESTS` + `CALLS*0..3`).
+- A regression test must **fail on the original code and pass with the fix**, and nothing that passed before may break.
+- Imports the patch forgot are resolved through the graph.
+- The proof is written back as `Fix` and `TestRun` nodes, and a verified fix confirms the root cause in memory.
+- The pull request description is written from the graph: the issue it fixes, the team decision it restores, the
+  before/after test table, and CODEOWNERS reviewers.
+- A person approves it before it's opened. See [docs/verification.md](docs/verification.md).
+
 It also knows the team around the code. Issues, pull requests, reviews, comments, teams and CODEOWNERS go into the
 same graph, linked to the commits and functions they touched. The **company brain** answers "why is this code the way
 it is" and "who should I ask", citing the issue, PR, review or decision behind every claim. It also flags **decisions
@@ -18,14 +27,33 @@ Built for **Graph Hacks 2026** (WeMakeDevs × FalkorDB).
 
 **Tracks entered:** Agents That Act on Connected Data (primary) · Agent Memory and Coordination · Company Brain
 
+### 3-minute judge path
+
+1. Connect `/demo/acme-shop`, then **New investigation → Fill demo bug**. Watch 22 graph steps stream in, each with
+   its Cypher. Root cause: `process_refund`.
+2. **Fix** tab: how the code got here (PR #12 reversed a decision Priya Raman recorded in PR #6), owners and reviewers.
+3. **Verify & ship** tab: the graph selected 1 of 4 tests. Press **Run in sandbox**. The regression test **fails** on
+   the original code and **passes** with the fix, the existing refund test still passes, and the agent added the
+   `get_order` import the patch forgot, found through the graph. Status: **Fix verified**. Change the fix to
+   `order["email"]` and run again: **Fix breaks other tests**.
+4. The pull request draft: `Fixes #13`, the restored decision, the proof table, and @dana-kim, @priya-raman as
+   reviewers. **Download .patch** applies with `git am`. **Open pull request** needs your approval (GitHub repos).
+5. Back on the investigation, the root cause is now **confirmed** in memory. A differently worded second bug starts
+   from it.
+
+Proof from a real run: [`evidence/`](evidence/) (`verification-run.json`, `fix.patch`, `pull-request.md`, screenshot),
+regenerated with `python scripts/capture_evidence.py`.
+
 | What the brief asks for | Where it lives |
 |---|---|
 | Multi-hop reasoning | Callers/callees up to 3 hops, tests reached through calls, call paths, blast radius |
 | Graph queries and algorithms as agent tools | 12 tools, all Cypher: PageRank hotspots, `shortestPath`, full-text search, BFS-style expansion |
-| Tool selection through MCP | `backend/app/mcp_server.py` exposes the same tools (plus `investigate_bug`, `run_cypher`) to any MCP client |
+| Tool selection through MCP | `backend/app/mcp_server.py` exposes the same tools (plus `investigate_bug`, `select_tests`, `verify_fix`, `run_cypher`) to any MCP client |
 | Actions based on what the graph shows | Ranks suspects, picks a root cause, writes a patch, names reviewers from commit authorship, flags risky untested changes and drafts tests for them |
+| Acting, and proving the action worked | Graph-selected tests + a reproducing regression test run before and after the patch in a sandbox; verdict `verified` / `regresses` / `not_reproduced` …; human-approved GitHub PR |
+| Graph-driven test impact analysis | `(Test)-[:TESTS]->()-[:CALLS*0..3]->(root cause)` picks the only tests a change can break (1 of 4 on the demo) |
 | Explainable results | Every step carries its Cypher; the **evidence graph** shows exactly the nodes and edges the agent visited |
-| Memory across sessions | `Investigation` nodes linked to the functions they suspected or confirmed; recalled and scored by later runs |
+| Memory across sessions | `Investigation` nodes linked to the functions they suspected or confirmed; recalled and scored by later runs. Fixes and their test runs are remembered too, and a verified fix confirms the root cause |
 | Shared state between agents | The web agent and an MCP client (e.g. Claude Code) read and write the same investigation memory |
 | Company brain: knowledge from docs, tickets and chats | Issues, PRs, reviews and comments from the GitHub API (or a tracker export) become `Issue`, `PullRequest`, `Comment` and `Decision` nodes |
 | Who owns what, who knows what | CODEOWNERS → `(Team)-[:OWNS]->(File)`; authors and reviewers ranked per file; files only one person has changed |
@@ -67,6 +95,11 @@ flowchart LR
   MCP --> T
   AG --> T[Graph tools<br/>cypher_queries.py]
   AG -. optional .-> LLM[Ollama<br/>tool-calling + patch]
+  API --> VER[Verifier<br/>test impact · before/after]
+  MCP --> VER
+  VER --> SB[Sandbox<br/>repo copy + pytest]
+  VER --> T
+  VER -. approved .-> GH[GitHub PR]
   ING[Ingestion<br/>tree-sitter + git log] --> FDB
   T --> FDB[(FalkorDB<br/>one graph per repo<br/>+ cd_registry)]
 ```
@@ -92,6 +125,15 @@ flowchart LR
      → rank. This always runs and needs no LLM.
   2. An optional **LLM loop** (Ollama, any tool-calling model): the model gets the ranked suspects and their source,
      picks graph tools itself to verify, and returns a verdict. A code model then writes a patch from the real source.
+- **Verifier** (`services/verifier.py`, `services/sandbox.py`, `services/pull_request.py`) does the following:
+  - selects tests from the graph,
+  - drafts a regression test (with the team's decisions from the graph as the spec),
+  - runs the tests before and after the patch in a sandbox copy,
+  - repairs missing imports through the graph,
+  - judges the result and writes `Fix`/`TestRun` nodes,
+  - drafts the PR from the graph.
+
+  Details and safety boundaries are in [docs/verification.md](docs/verification.md).
 
 ## Graph data model
 
@@ -113,6 +155,8 @@ flowchart LR
 | `PullRequest` | `id`, `number`, `title`, `body`, `state`, `url`, `created_ms`, `merged_ms` | **Knowledge** |
 | `Comment` | `id`, `body`, `url`, `created_ms`, `path` | **Knowledge**: issue/PR comments, review comments and review summaries |
 | `Decision` | `id`, `text`, `url`, `at_ms` | **Knowledge**: a sentence that records a decision, kept verbatim |
+| `Fix` | `id`, `status`, `summary`, `created_at`, `payload` | **Action**: a patch the agent proposed, with its verdict (`verified`, `regresses`, …) |
+| `TestRun` | `id`, `phase`, `passed`, `failed`, `errors`, `duration_ms`, `at` | **Action**: one sandbox run, on the original or the patched code |
 
 ### Relationships
 
@@ -129,7 +173,7 @@ flowchart LR
 | `MENTIONS` | `(BugReport)->(Function)` | entry points found for the report |
 | `INVESTIGATED_IN` | `(BugReport)->(Investigation)` | |
 | `SUSPECTS` | `(Investigation)->(Function)` | `rank`, `score` |
-| `CONFIRMED` | `(Investigation)->(Function)` | human feedback: the real root cause |
+| `CONFIRMED` | `(Investigation)->(Function)` | the real root cause: human feedback, or `source: 'verification'` when a fix was proven |
 | `MEMBER_OF` | `(Person)->(Team)` | |
 | `OWNS` | `(Team\|Person)->(File)` | `pattern` (the CODEOWNERS rule that matched, last match wins) |
 | `OPENED` | `(Person)->(Issue\|PullRequest)` | |
@@ -143,6 +187,11 @@ flowchart LR
 | `INCLUDES` | `(PullRequest)->(Commit)` | |
 | `DECIDED_IN` | `(Decision)->(Issue\|PullRequest\|Comment)` | |
 | `DECIDED` | `(Person)->(Decision)` | |
+| `PROPOSED` | `(Investigation)->(Fix)` | |
+| `PATCHES` | `(Fix)->(Function)` | |
+| `VERIFIED_BY` | `(Fix)->(TestRun)` | `phase` (`original`, `patched`) |
+| `RAN` | `(TestRun)->(Test)` | `outcome` (`passed`, `failed`, `error`, `skipped`) |
+| `OPENED_AS` | `(Fix)->(PullRequest)` | the PR a person approved |
 
 ### Indexes
 
@@ -342,6 +391,30 @@ OPTIONAL MATCH (f)-[:CONTAINS]->(:Function)<-[:CALLS]-(caller:Function)
 RETURN f.path, authors[0] AS only_author, count(DISTINCT o) AS owners, count(DISTINCT caller) AS callers
 ```
 
+**Fix verification: test impact analysis** (tests that can reach the root cause, and how far away)
+```cypher
+MATCH (f:Function {id: $id})
+MATCH p = (t:Test)-[:TESTS]->(:Function)-[:CALLS*0..3]->(f)
+WITH t, min(length(p)) AS hops
+RETURN t.id AS id, t.name AS name, t.file_path AS file_path, hops - 1 AS distance
+```
+
+**Fix verification: the proof, written back**
+```cypher
+MATCH (i:Investigation {id: $investigation_id}), (f:Function {id: $fn_id})
+CREATE (x:Fix {id: $id, status: $status, summary: $summary, created_at: $created_at, payload: $payload})
+CREATE (i)-[:PROPOSED]->(x)
+CREATE (x)-[:PATCHES]->(f)
+// then, per phase:
+MATCH (x:Fix {id: $fix_id})
+CREATE (r:TestRun {id: $id, phase: $phase, passed: $passed, failed: $failed, errors: $errors, duration_ms: $duration_ms})
+CREATE (x)-[:VERIFIED_BY {phase: $phase}]->(r)
+// and every Test node it ran:
+UNWIND $rows AS row
+MATCH (r:TestRun {id: $run_id}), (t:Test {id: row.test_id})
+CREATE (r)-[:RAN {outcome: row.outcome}]->(t)
+```
+
 ### How suspects are scored
 
 Every factor comes from the graph, and the UI shows the breakdown for each suspect:
@@ -383,7 +456,7 @@ python3.11 -m venv venv && source venv/bin/activate
 pip install -r requirements-dev.txt
 cp ../.env.example .env
 uvicorn app.main:app --reload            # http://localhost:8000
-pytest                                   # 36 tests; integration tests need FalkorDB on :6379
+pytest                                   # 46 tests; integration tests need FalkorDB on :6379
 
 cd ../frontend
 npm install
@@ -429,7 +502,10 @@ automatically. For other clients:
 Tools: `list_repositories`, `search_code`, `get_function`, `get_callers`, `get_callees`, `get_tests`,
 `recent_changes`, `find_experts`, `blast_radius`, `call_path`, `hotspots`, `risky_changes`, `test_context`,
 `recall_past_investigations`, `investigate_bug`, `confirm_root_cause`, `why_code`, `who_owns`, `search_knowledge`,
-`decisions`, `ask_company_brain`, `run_cypher` (read-only).
+`decisions`, `ask_company_brain`, `select_tests`, `verify_fix`, `run_cypher` (read-only).
+`verify_fix` closes the loop from Claude Code: after `investigate_bug`, Claude writes the corrected function and a
+regression test, and the tool proves them in the sandbox and returns the verdict, the diff and a PR draft. The
+result lands in the same graph the web UI reads.
 `test_context` gives an MCP client everything it needs to write a test itself: the function, its callers and callees,
 its module code and the nearest existing tests.
 Investigations started over MCP show up in the web UI's **Agent memory** panel and vice versa.
@@ -465,7 +541,14 @@ Investigations started over MCP show up in the web UI's **Agent memory** panel a
     with reasons. The side panels show every decision (the one that drifted first), who owns what, and files only one
     person has changed. **Sync** re-reads the tracker and merges what changed. `/brain?repo=<id>&q=<question>` links
     straight to an answer.
-13. Optionally ask Claude Code: *"Use codebase-detective to find who should review a change to process_refund"*. It
+13. **Verify & ship** tab on the investigation from step 3: press **Run in sandbox**. You'll see:
+    - the regression test go from failed to passed,
+    - `test_full_refund_marks_order_refunded` still passing,
+    - `get_order` added to the `from shop.orders import ...` line,
+    - **Fix verified**, then the pull request draft and **Download .patch**.
+
+    The investigation is now `confirmed`.
+14. Optionally ask Claude Code: *"Use codebase-detective to find who should review a change to process_refund"*. It
     calls `find_experts` or `who_owns` over MCP, or `ask_company_brain` for a cited answer.
 
 ## API
@@ -479,6 +562,10 @@ Investigations started over MCP show up in the web UI's **Agent memory** panel a
 | `GET` | `/api/v1/investigations/{id}/events` | Server-sent events: each step as it happens, then the result |
 | `GET` | `/api/v1/investigations/{id}` · `/api/v1/investigations?repository_id=` | |
 | `POST` | `/api/v1/investigations/{id}/confirm` | Record the real root cause (`{function_id}`) |
+| `POST` | `/api/v1/investigations/{id}/fix/draft` | Corrected function, a drafted regression test and the graph-selected tests |
+| `POST` | `/api/v1/investigations/{id}/verify` | Server-sent events: sandbox run before and after the patch (`{patched_code \| diff, test_code}`), then the verdict |
+| `GET` | `/api/v1/investigations/{id}/fixes` · `/fixes/{fix_id}/patch` | Every verified or failed fix; the fix as a `git am` patch |
+| `POST` | `/api/v1/investigations/{id}/fixes/{fix_id}/pull-request` | Open the PR on GitHub (`{approve: true, github_token?}`); draft unless verified |
 | `GET` | `/api/v1/graph/investigation/{id}` | Evidence subgraph |
 | `GET` | `/api/v1/graph/{repo_id}/hotspots` · `/risky-changes?commits=N` · `/function/{fid}` · `/function/{fid}/source` | |
 | `POST` | `/api/v1/graph/{repo_id}/function/{fid}/suggest-test` | Graph context for testing the function, plus a draft test from the local model |
@@ -499,6 +586,9 @@ backend/app/
   services/knowledge.py       issues, PRs, reviews, comments, CODEOWNERS -> graph; decision extraction; sync
   services/brain.py           company brain: cited answers from why_code / who_owns / search_knowledge
   services/test_writer.py     suggested tests: graph context → prompt → draft test file
+  services/verifier.py        fix verification: test impact, regression test, before/after verdict, PR draft
+  services/sandbox.py         throwaway repo copy, splice + import repair, limited pytest runs, JUnit parsing
+  services/pull_request.py    human-approved GitHub PR, git-am patch
   services/llm.py             Ollama client (local or Ollama Cloud)
   services/store.py           repository registry graph
   api/routes/                 repos, investigations (+SSE), graph, brain
@@ -507,10 +597,12 @@ frontend/src/
   pages/                      Landing, Dashboard, NewInvestigation, InvestigationView, Brain
   components/knowledge/       code history (PRs, reviews, decisions, drift) and ownership views
   components/landing/         InvestigationReplay (animated replay of a real demo run)
-  components/investigation/   EvidenceGraph (React Flow + dagre)
+  components/investigation/   EvidenceGraph (React Flow + dagre), Trace (step cards), VerifyFix (Verify & ship tab)
   hooks/useTheme.ts           light/dark theme (saved choice, else the system setting)
   components/SuggestTestDialog.tsx   suggested-test dialog (Dashboard and Fix tab)
 demo/create_demo_repo.py      synthetic demo repository with history, CODEOWNERS and a tracker export
+docs/verification.md          closing the loop: design, verdicts, graph write-back, safety boundaries
+scripts/capture_evidence.py   runs the whole loop against a live API and writes evidence/
 render.yaml                   Render Blueprint for the API (free plan)
 frontend/vercel.json          Vercel SPA routing
 ```
@@ -529,6 +621,9 @@ frontend/vercel.json          Vercel SPA routing
   tracker export.
 - Patches and suggested tests come from a local model and must be reviewed. With `qwen2.5-coder:7b`, roughly half of
   the generated test cases passed on the demo repo; the usual mistakes are invented test data and wrong expected values.
+- Fix verification runs Python repositories with pytest, without installing their third-party dependencies. The
+  sandbox is a subprocess with a scrubbed environment and limits, not a container, so by default only repositories
+  connected from a server directory can be verified (`VERIFY_FIXES=local`).
 - `module_code` is stored at ingestion; repositories ingested before it existed need re-connecting for better tests.
 
 ## Data
@@ -565,7 +660,8 @@ This project was built with heavy use of an AI coding assistant, **Claude Code**
 server, the API, the frontend (the landing page, the light/dark theme and the UI redesign), the demo repository and
 the tests, most of the Cypher queries, and the code for the Investigate and Suggest test buttons and the test writer,
 from my designs. Also the Company Brain layer (knowledge ingestion from GitHub and the tracker export, decision
-extraction and drift, ownership, the brain page and its tests).
+extraction and drift, ownership, the brain page and its tests). Also the fix-verification loop (graph test
+selection, the sandbox, import repair, the verdicts, PR drafting and the Verify & ship tab).
 
 ## License
 

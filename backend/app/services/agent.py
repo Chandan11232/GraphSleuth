@@ -618,9 +618,11 @@ class Investigation:
         except LLMUnavailable as e:
             yield self._step("generate_fix", f"Patch generation failed: {str(e)[:150]}", "Patch skipped", queries=[])
             return
-        diff, test_note = self._build_diff(reply["content"], fn)
+        diff, test_note, patched_code = self._build_diff(reply["content"], fn)
         cause = re.search(r"^\s*\**Cause:?\**:?\s*(.+)$", reply["content"], re.M)
         self.fix["diff"] = diff
+        # The corrected function itself, which the verifier splices into a sandbox copy of the repo.
+        self.fix["patched_code"] = patched_code if diff else ""
         self.fix["test_suggestion"] = test_note
         self.mode = "graph+llm"
         self.fix["cause"] = cause.group(1).strip() if cause else ""
@@ -630,16 +632,17 @@ class Investigation:
                          queries=[compact(Q.GET_FUNCTION), compact(Q.GET_CALLEES)], actor="llm")
 
     @staticmethod
-    def _build_diff(text: str, fn: Dict[str, Any]) -> Tuple[str, str]:
+    def _build_diff(text: str, fn: Dict[str, Any]) -> Tuple[str, str, str]:
         """Diff the model's corrected function against the real source, so the
-        patch always has correct context and line numbers."""
+        patch always has correct context and line numbers. Also returns the
+        corrected function."""
         test_note = ""
         m = re.search(r"^\W*Test:\W*(.+)$", text, re.M)
         if m:
             test_note = m.group(1).strip()
         blocks = re.findall(r"```[\w+-]*\n(.*?)```", text, re.S)
         if not blocks:
-            return "", test_note
+            return "", test_note, ""
         new_code = max(blocks, key=len).rstrip("\n")
         old_code = (fn.get("code") or "").rstrip("\n")
         old_lines, new_lines = old_code.splitlines(), new_code.splitlines()
@@ -654,7 +657,7 @@ class Investigation:
                         new_lines[-1] += ";"
         # Ignore whitespace-only differences and blank lines.
         if [ln.strip() for ln in old_lines if ln.strip()] == [ln.strip() for ln in new_lines if ln.strip()]:
-            return "", test_note
+            return "", test_note, ""
         # Models often drop the method's leading indentation; restore it.
         indent = re.match(r"\s*", old_lines[1] if len(old_lines) > 1 else "").group(0) if old_lines else ""
         if old_lines and new_lines and not new_lines[0].startswith((" ", "\t")) and len(old_lines) > 1 \
@@ -664,7 +667,7 @@ class Investigation:
                 pad = indent[:len(indent) - len(body_indent)]
                 new_lines = [new_lines[0]] + [pad + ln if ln.strip() else ln for ln in new_lines[1:]]
         if old_lines == new_lines:
-            return "", test_note
+            return "", test_note, ""
         path = fn.get("file_path", "")
         start = int(fn.get("start_line") or 1)
         diff = list(difflib.unified_diff(old_lines, new_lines, f"a/{path}", f"b/{path}", lineterm="", n=3))
@@ -674,7 +677,7 @@ class Investigation:
             if h:  # shift hunk headers from function-relative to file line numbers
                 line = f"@@ -{int(h.group(1)) + start - 1}{h.group(2) or ''} +{int(h.group(3)) + start - 1}{h.group(4) or ''} @@"
             out.append(line)
-        return "\n".join(out), test_note
+        return "\n".join(out), test_note, "\n".join(new_lines)
 
     # ------------------------------------------------------------ 8. memory
 

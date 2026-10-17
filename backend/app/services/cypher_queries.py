@@ -791,3 +791,91 @@ RETURN 'Decision' AS type, node.id AS id, item.number AS number, item.title AS t
 ORDER BY score DESC
 LIMIT $limit
 """
+
+# --------------------------------------------------------------------------
+# Fix verification: which tests to run, and what the sandbox proved
+# --------------------------------------------------------------------------
+
+# Test impact analysis: every test whose TESTS edge reaches the function directly or
+# through up to 3 CALLS hops. These are the tests a change to it can break.
+TEST_IMPACT = """
+MATCH (f:Function {id: $id})
+MATCH p = (t:Test)-[:TESTS]->(:Function)-[:CALLS*0..3]->(f)
+WITH t, min(length(p)) AS hops
+RETURN t.id AS id, t.name AS name, t.file_path AS file_path, hops - 1 AS distance
+ORDER BY distance, file_path, name
+"""
+
+COUNT_TESTS = """
+MATCH (t:Test) RETURN count(t) AS n
+"""
+
+SAVE_FIX = """
+MATCH (i:Investigation {id: $investigation_id}), (f:Function {id: $fn_id})
+CREATE (x:Fix {id: $id, status: $status, summary: $summary, created_at: $created_at, payload: $payload})
+CREATE (i)-[:PROPOSED]->(x)
+CREATE (x)-[:PATCHES]->(f)
+RETURN x.id AS id
+"""
+
+# One TestRun per phase (the original code, then the patched code), linked to every Test node it ran.
+SAVE_TEST_RUN = """
+MATCH (x:Fix {id: $fix_id})
+CREATE (r:TestRun {id: $id, phase: $phase, passed: $passed, failed: $failed, errors: $errors,
+                   duration_ms: $duration_ms, at: $at})
+CREATE (x)-[:VERIFIED_BY {phase: $phase}]->(r)
+RETURN r.id AS id
+"""
+
+LINK_TEST_RUN = """
+UNWIND $rows AS row
+MATCH (r:TestRun {id: $run_id}), (t:Test {id: row.test_id})
+CREATE (r)-[:RAN {outcome: row.outcome}]->(t)
+"""
+
+# A fix whose regression test failed before the patch and passed after it is machine evidence that the
+# root cause was right, so it is remembered the same way as a human confirmation.
+CONFIRM_BY_VERIFICATION = """
+MATCH (i:Investigation {id: $investigation_id}), (f:Function {id: $fn_id})
+MERGE (i)-[c:CONFIRMED]->(f)
+SET c.at = timestamp(), c.note = $note, c.source = 'verification'
+SET i.status = 'confirmed'
+RETURN f.qualified_name AS name
+"""
+
+LIST_FIXES = """
+MATCH (:Investigation {id: $investigation_id})-[:PROPOSED]->(x:Fix)
+RETURN x.id AS id, x.status AS status, x.payload AS payload
+ORDER BY x.created_at DESC
+"""
+
+GET_FIX = """
+MATCH (i:Investigation)-[:PROPOSED]->(x:Fix {id: $id})
+RETURN i.id AS investigation_id, x.payload AS payload
+"""
+
+UPDATE_FIX = """
+MATCH (x:Fix {id: $id}) SET x.payload = $payload, x.status = $status
+"""
+
+LOGINS_FOR = """
+MATCH (p:Person) WHERE p.email IN $emails OR p.name IN $names
+RETURN p.name AS name, p.email AS email, p.login AS login
+"""
+
+# A pull request the agent opened, linked to the fix it carries.
+SAVE_OPENED_PR = """
+MATCH (x:Fix {id: $fix_id})
+MERGE (pr:PullRequest {id: $pr_id})
+SET pr.number = $number, pr.title = $title, pr.url = $url, pr.state = 'open', pr.created_ms = timestamp(),
+    pr.body = $body
+MERGE (x)-[:OPENED_AS]->(pr)
+"""
+
+# Where a top-level function or class is defined, for adding an import a patch forgot.
+DEFINITIONS_OF = """
+MATCH (n) WHERE (n:Function OR n:Class) AND n.name IN $names AND n.file_path ENDS WITH '.py'
+  AND NOT n.file_path CONTAINS 'test'
+  AND (n:Class OR n.qualified_name = n.name)
+RETURN n.name AS name, n.file_path AS file_path
+"""

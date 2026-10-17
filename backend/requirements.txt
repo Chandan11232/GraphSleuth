@@ -14,3 +14,5 @@ mcp==1.26.0
 structlog==24.1.0
 httpx==0.28.1
 python-dotenv==1.2.4
+# Runs a repository's tests in the fix-verification sandbox
+pytest==8.2.2
