@@ -5,6 +5,7 @@ services:
     name: codebase-detective-api
     runtime: docker
     plan: free
+    region: singapore          # closest Render region to the FalkorDB Cloud instance (ap-south-1, Mumbai)
     dockerContext: .
     dockerfilePath: ./backend/Dockerfile
     healthCheckPath: /api/v1/health
