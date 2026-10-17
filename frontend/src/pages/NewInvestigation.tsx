@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { Crosshair, Loader2, Search, Wand2 } from 'lucide-react'
 import { useRepositories } from '../hooks'
-import { api, errorMessage } from '../services/api'
+import { api, errorMessage, type Health } from '../services/api'
 import { Button } from '../components/ui/Button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
@@ -37,6 +37,12 @@ export function NewInvestigation() {
   })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // False when the server has no LLM configured (LLM_PROVIDER=none), e.g. a hosted demo.
+  const [llmEnabled, setLlmEnabled] = useState(true)
+
+  useEffect(() => {
+    api.get<Health>('/health').then(r => setLlmEnabled(r.data.llm.enabled)).catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!form.repository_id && ready.length) setForm(f => ({ ...f, repository_id: ready[0].id }))
@@ -47,7 +53,7 @@ export function NewInvestigation() {
     setSubmitting(true)
     setError(null)
     try {
-      const r = await api.post('/investigations', form)
+      const r = await api.post('/investigations', { ...form, use_llm: form.use_llm && llmEnabled })
       navigate(`/investigations/${r.data.id}`)
     } catch (err) {
       setError(errorMessage(err, 'Could not start the investigation'))
@@ -110,8 +116,11 @@ export function NewInvestigation() {
               />
             </div>
             <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={form.use_llm} onChange={e => setForm({ ...form, use_llm: e.target.checked })} />
-              Let the LLM drive extra graph tools and write a patch (needs Ollama; graph-only otherwise)
+              <input type="checkbox" checked={form.use_llm && llmEnabled} disabled={!llmEnabled}
+                     onChange={e => setForm({ ...form, use_llm: e.target.checked })} />
+              {llmEnabled
+                ? 'Let the LLM drive extra graph tools and write a patch (needs Ollama; graph-only otherwise)'
+                : 'This server runs graph-only: no LLM is configured, so no patch is written'}
             </label>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <Button type="submit" disabled={submitting || !form.repository_id}>

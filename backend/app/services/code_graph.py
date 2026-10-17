@@ -435,6 +435,9 @@ def ingest_source(
     if os.path.isdir(source):
         if not settings.ALLOW_LOCAL_REPOS:
             raise ValueError("Local repositories are disabled on this server")
+        root = settings.LOCAL_REPOS_ROOT
+        if root and os.path.commonpath([os.path.realpath(source), os.path.realpath(root)]) != os.path.realpath(root):
+            raise ValueError(f"Local repositories must be inside {root} on this server")
         return builder.ingest(source, progress)
     with tempfile.TemporaryDirectory() as tmp:
         dest = os.path.join(tmp, "repo")

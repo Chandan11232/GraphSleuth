@@ -124,7 +124,8 @@ async def suggest_test(graph_name: str, function_id: str, model: Optional[str] =
     model = model or (await llm.pick_model(settings.OLLAMA_MODEL, fallbacks=CODE_MODELS) if llm.enabled else None)
     if not model:
         out["error"] = ("No local model is available, so only the graph context is shown. Start Ollama with "
-                        f"{settings.OLLAMA_MODEL} to have a test written.")
+                        f"{settings.OLLAMA_MODEL} to have a test written." if llm.enabled else
+                        "This server runs graph-only (no LLM), so only the graph context a model would use is shown.")
         return out
     try:
         reply = await llm.chat(model, [

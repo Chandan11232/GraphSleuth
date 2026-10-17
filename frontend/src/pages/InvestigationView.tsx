@@ -281,7 +281,7 @@ export function InvestigationView() {
                       <p className="text-sm text-muted-foreground">
                         {result?.mode === 'graph+llm'
                           ? 'No patch: the model did not find a concrete code change to make in this function.'
-                          : 'No patch: the investigation ran graph-only. Turn on the LLM option with Ollama running to get a diff.'}
+                          : 'No patch: this investigation ran graph-only (no LLM), so no diff was written. The root cause, its source and reviewers are below.'}
                       </p>
                     )}
                     {fix.test_suggestion && (

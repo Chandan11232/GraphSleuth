@@ -1,0 +1,25 @@
+# Render Blueprint for the backend API (free plan). FalkorDB runs on FalkorDB Cloud; the frontend on Vercel.
+# Values marked `sync: false` are asked for when the Blueprint is created.
+services:
+  - type: web
+    name: codebase-detective-api
+    runtime: docker
+    plan: free
+    dockerContext: .
+    dockerfilePath: ./backend/Dockerfile
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: FALKORDB_HOST
+        sync: false
+      - key: FALKORDB_PORT
+        sync: false
+      - key: FALKORDB_USERNAME
+        sync: false
+      - key: FALKORDB_PASSWORD
+        sync: false
+      - key: CORS_ORIGINS        # your Vercel URL, e.g. https://codebase-detective.vercel.app
+        sync: false
+      - key: LOCAL_REPOS_ROOT    # only the baked-in demo repo can be connected by path
+        value: /demo
+      - key: LLM_PROVIDER        # graph-only; set to "ollama" with OLLAMA_HOST/OLLAMA_API_KEY for Ollama Cloud
+        value: none

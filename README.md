@@ -274,7 +274,7 @@ python3.11 -m venv venv && source venv/bin/activate
 pip install -r requirements-dev.txt
 cp ../.env.example .env
 uvicorn app.main:app --reload            # http://localhost:8000
-pytest                                   # 22 tests; integration tests need FalkorDB on :6379
+pytest                                   # 23 tests; integration tests need FalkorDB on :6379
 
 cd ../frontend
 npm install
@@ -283,6 +283,27 @@ npm run dev                              # http://localhost:3000 (proxies /api/v
 
 Set `LLM_PROVIDER=none` to run without any LLM. The graph sweep, ranking, verdict, reviewers and blast radius all
 still work; you only lose the LLM tool loop and the patch.
+
+## Deploy for free
+
+A free hosted setup: **FalkorDB Cloud** (database) + **Render** (API) + **Vercel** (frontend), graph-only with
+`LLM_PROVIDER=none`. Investigations, ranking, risky changes, blast radius, reviewers and memory all work; patches and
+test drafts need a model, so the UI says the server runs graph-only.
+
+1. **FalkorDB Cloud:** create a free instance at [app.falkordb.cloud](https://app.falkordb.cloud) and note its host,
+   port, username and password.
+2. **Render:** *New → Blueprint*, pick this GitHub repo. `render.yaml` builds `backend/Dockerfile` (which bakes in the
+   demo repo at `/demo/acme-shop`) and asks for `FALKORDB_HOST`, `FALKORDB_PORT`, `FALKORDB_USERNAME`,
+   `FALKORDB_PASSWORD` and `CORS_ORIGINS` (your Vercel URL; you can fill it in after step 3). Set `FALKORDB_SSL=true`
+   if your instance requires TLS. Check `https://<service>.onrender.com/api/v1/health` shows `"falkordb": true`.
+3. **Vercel:** *Add New → Project*, pick this repo, set **Root Directory** to `frontend` and the environment variable
+   `VITE_API_URL=https://<service>.onrender.com/api/v1`. `frontend/vercel.json` sends every route to the app.
+4. Open the Vercel URL, go to `/repos` and connect **`/demo/acme-shop`** (or any public GitHub URL).
+
+The free Render service sleeps after about 15 minutes idle, so the first request after that takes up to a minute.
+For patches and test drafts, set `LLM_PROVIDER=ollama` with `OLLAMA_HOST=https://ollama.com` and `OLLAMA_API_KEY`
+(Ollama Cloud). The hosted API has no login: anyone with the URL can connect or delete repositories, so use it for
+demos only.
 
 ## Use it from Claude Code (MCP)
 
@@ -363,6 +384,8 @@ frontend/src/
   hooks/useTheme.ts           light/dark theme (saved choice, else the system setting)
   components/SuggestTestDialog.tsx   suggested-test dialog (Dashboard and Fix tab)
 demo/create_demo_repo.py      synthetic demo repository with history
+render.yaml                   Render Blueprint for the API (free plan)
+frontend/vercel.json          Vercel SPA routing
 ```
 
 ## Limitations

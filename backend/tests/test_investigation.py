@@ -89,7 +89,7 @@ async def test_suggest_test_without_a_model(graph):
     assert out["test_path"] == "tests/test_notifications.py"
     assert out["framework"] == "pytest"
     assert out["context"]["callers"] == [{"name": "notify_refund", "file_path": "shop/notifications.py"}]
-    assert out["code"] == "" and "No local model" in out["error"]
+    assert out["code"] == "" and "graph-only" in out["error"]
     with pytest.raises(test_writer.FunctionNotFound):
         await test_writer.suggest_test(graph[0], "no_such_function")
 
@@ -167,6 +167,17 @@ def test_rejects_unsafe_clone_urls():
         with pytest.raises(ValueError):
             _validate_remote_url(bad)
     assert _validate_remote_url("https://github.com/pallets/flask")
+
+
+def test_local_repos_are_limited_to_their_root(tmp_path, monkeypatch):
+    from app.core.config import settings
+    from app.services.code_graph import ingest_source
+
+    monkeypatch.setattr(settings, "LOCAL_REPOS_ROOT", str(tmp_path / "demo"))
+    (tmp_path / "demo").mkdir()
+    for outside in [str(tmp_path), str(tmp_path / "demo" / "..")]:
+        with pytest.raises(ValueError, match="must be inside"):
+            ingest_source(outside, "repo_never_written", "r", "x")
 
 
 async def test_repo_without_calls_does_not_crash(tmp_path):

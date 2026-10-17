@@ -58,6 +58,7 @@ class FalkorDBConnection:
                 port=settings.FALKORDB_PORT,
                 username=settings.FALKORDB_USERNAME,
                 password=settings.FALKORDB_PASSWORD,
+                ssl=settings.FALKORDB_SSL,
             )
         return self._db
 

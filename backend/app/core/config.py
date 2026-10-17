@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     FALKORDB_PORT: int = 6379
     FALKORDB_USERNAME: Optional[str] = None
     FALKORDB_PASSWORD: Optional[str] = None
+    FALKORDB_SSL: bool = False
     # Graph that lists repositories; each repository gets its own graph (repo_<hex>).
     REGISTRY_GRAPH: str = "cd_registry"
     QUERY_TIMEOUT_MS: int = 15000
@@ -33,6 +34,8 @@ class Settings(BaseSettings):
     MAX_FILES_PER_REPO: int = 5000
     # Lets POST /repos ingest a directory on the server (demo / offline use).
     ALLOW_LOCAL_REPOS: bool = True
+    # When set, local repositories must live under this directory (set it on public deployments).
+    LOCAL_REPOS_ROOT: Optional[str] = None
 
     CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
 

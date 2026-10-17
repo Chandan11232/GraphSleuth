@@ -13,7 +13,9 @@ services:
       retries: 10
 
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     ports:
       - "8000:8000"
     environment:
@@ -27,6 +29,7 @@ services:
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-1m}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       CORS_ORIGINS: http://localhost:3000
+      LOCAL_REPOS_ROOT: /demo
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
