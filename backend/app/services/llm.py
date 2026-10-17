@@ -14,7 +14,8 @@ logger = structlog.get_logger()
 
 
 # Ollama model families that support tool calling, best first.
-TOOL_MODEL_FAMILIES = ("qwen2.5-coder", "qwen3", "qwen2.5", "llama3.1", "llama3.2", "mistral-nemo", "mistral",
+# gpt-oss comes before mistral because Ollama Cloud lists mistral-large models that free accounts can't use.
+TOOL_MODEL_FAMILIES = ("qwen2.5-coder", "qwen3", "qwen2.5", "llama3.1", "llama3.2", "gpt-oss", "mistral-nemo", "mistral",
                        "command-r", "granite3")
 
 

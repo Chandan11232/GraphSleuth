@@ -13,7 +13,7 @@ from app.core.config import settings
 from app.services.graph_tools import GraphTools
 from app.services.llm import LLMUnavailable, get_llm
 
-CODE_MODELS = ("qwen2.5-coder", "deepseek-coder", "codellama", "qwen3", "qwen2.5", "llama3.1")
+CODE_MODELS = ("qwen2.5-coder", "deepseek-coder", "codellama", "qwen3", "qwen2.5", "llama3.1", "gpt-oss")
 
 FRAMEWORKS = {
     "python": "pytest",

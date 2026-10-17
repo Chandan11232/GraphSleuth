@@ -301,8 +301,9 @@ test drafts need a model, so the UI says the server runs graph-only.
 4. Open the Vercel URL, go to `/repos` and connect **`/demo/acme-shop`** (or any public GitHub URL).
 
 The free Render service sleeps after about 15 minutes idle, so the first request after that takes up to a minute.
-For patches and test drafts, set `LLM_PROVIDER=ollama` with `OLLAMA_HOST=https://ollama.com` and `OLLAMA_API_KEY`
-(Ollama Cloud). The hosted API has no login: anyone with the URL can connect or delete repositories, so use it for
+For patches and test drafts, set `LLM_PROVIDER=ollama` with `OLLAMA_HOST=https://ollama.com`, `OLLAMA_API_KEY`
+(Ollama Cloud) and `OLLAMA_AGENT_MODEL=OLLAMA_MODEL=gpt-oss:120b` (or `gpt-oss:20b`); not every listed cloud model is
+open to free accounts. The hosted API has no login: anyone with the URL can connect or delete repositories, so use it for
 demos only.
 
 ## Use it from Claude Code (MCP)

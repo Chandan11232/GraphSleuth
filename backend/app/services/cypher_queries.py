@@ -183,15 +183,18 @@ RETURN f.id AS id, count(c2) AS touches, max(c2.timestamp) AS last_touch, newest
 """
 
 # Who knows this code: authors of commits that touched the function or its file.
+# One row per name, since the same person often commits under more than one email.
 FIND_EXPERTS = """
 MATCH (f:Function {id: $id})
 OPTIONAL MATCH (p1:Person)-[:AUTHORED]->(:Commit)-[:TOUCHED]->(f)
 OPTIONAL MATCH (p2:Person)-[:AUTHORED]->(:Commit)-[:MODIFIES]->(:File {path: f.file_path})
 WITH collect(p1) AS fn_people, collect(p2) AS file_people
 UNWIND fn_people + file_people AS p
-WITH p, size([x IN fn_people WHERE x = p]) AS fn_commits, size([x IN file_people WHERE x = p]) AS file_commits
+WITH DISTINCT p, size([x IN fn_people WHERE x = p]) AS fn_commits, size([x IN file_people WHERE x = p]) AS file_commits
 WHERE p IS NOT NULL
-RETURN DISTINCT p.name AS name, p.email AS email, fn_commits, file_commits
+WITH p.name AS name, collect(p.email) AS emails, toInteger(sum(fn_commits)) AS fn_commits,
+     toInteger(sum(file_commits)) AS file_commits
+RETURN name, emails[0] AS email, fn_commits, file_commits
 ORDER BY fn_commits DESC, file_commits DESC
 LIMIT 5
 """
