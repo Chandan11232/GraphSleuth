@@ -6,6 +6,7 @@ the root cause. It shows every hop as a Cypher query, then suggests a patch, rev
 It remembers every investigation in the graph, so the next bug in the same area starts with that history.
 
 Then it **closes the loop**. It proves the fix in a sandbox before anyone opens a pull request:
+
 - The graph picks the tests that can reach the root cause (`TESTS` + `CALLS*0..3`).
 - A regression test must **fail on the original code and pass with the fix**, and nothing that passed before may break.
 - Imports the patch forgot are resolved through the graph.
@@ -44,22 +45,22 @@ Built for **Graph Hacks 2026** (WeMakeDevs × FalkorDB).
 Proof from a real run: [`evidence/`](evidence/) (`verification-run.json`, `fix.patch`, `pull-request.md`, screenshot),
 regenerated with `python scripts/capture_evidence.py`.
 
-| What the brief asks for | Where it lives |
-|---|---|
-| Multi-hop reasoning | Callers/callees up to 3 hops, tests reached through calls, call paths, blast radius |
-| Graph queries and algorithms as agent tools | 12 tools, all Cypher: PageRank hotspots, `shortestPath`, full-text search, BFS-style expansion |
-| Tool selection through MCP | `backend/app/mcp_server.py` exposes the same tools (plus `investigate_bug`, `select_tests`, `verify_fix`, `run_cypher`) to any MCP client |
-| Actions based on what the graph shows | Ranks suspects, picks a root cause, writes a patch, names reviewers from commit authorship, flags risky untested changes and drafts tests for them |
-| Acting, and proving the action worked | Graph-selected tests + a reproducing regression test run before and after the patch in a sandbox; verdict `verified` / `regresses` / `not_reproduced` …; human-approved GitHub PR |
-| Graph-driven test impact analysis | `(Test)-[:TESTS]->()-[:CALLS*0..3]->(root cause)` picks the only tests a change can break (1 of 4 on the demo) |
-| Explainable results | Every step carries its Cypher; the **evidence graph** shows exactly the nodes and edges the agent visited |
-| Memory across sessions | `Investigation` nodes linked to the functions they suspected or confirmed; recalled and scored by later runs. Fixes and their test runs are remembered too, and a verified fix confirms the root cause |
-| Shared state between agents | The web agent and an MCP client (e.g. Claude Code) read and write the same investigation memory |
-| Company brain: knowledge from docs, tickets and chats | Issues, PRs, reviews and comments from the GitHub API (or a tracker export) become `Issue`, `PullRequest`, `Comment` and `Decision` nodes |
-| Who owns what, who knows what | CODEOWNERS → `(Team)-[:OWNS]->(File)`; authors and reviewers ranked per file; files only one person has changed |
-| Tracing decisions to their source | `(Decision)-[:DECIDED_IN]->(Comment)-[:ON]->(PullRequest)-[:INCLUDES]->(Commit)-[:TOUCHED]->(Function)` |
-| Keeping knowledge current | Idempotent `MERGE` sync that fetches only what changed since the last sync; decisions flagged when later commits change the code they govern |
-| Answers with clear sources | Every sentence of a brain answer cites a numbered graph node, and the answer's subgraph and Cypher are shown |
+| What the brief asks for                               | Where it lives                                                                                                                                                                                         |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Multi-hop reasoning                                   | Callers/callees up to 3 hops, tests reached through calls, call paths, blast radius                                                                                                                    |
+| Graph queries and algorithms as agent tools           | 12 tools, all Cypher: PageRank hotspots, `shortestPath`, full-text search, BFS-style expansion                                                                                                         |
+| Tool selection through MCP                            | `backend/app/mcp_server.py` exposes the same tools (plus `investigate_bug`, `select_tests`, `verify_fix`, `run_cypher`) to any MCP client                                                              |
+| Actions based on what the graph shows                 | Ranks suspects, picks a root cause, writes a patch, names reviewers from commit authorship, flags risky untested changes and drafts tests for them                                                     |
+| Acting, and proving the action worked                 | Graph-selected tests + a reproducing regression test run before and after the patch in a sandbox; verdict `verified` / `regresses` / `not_reproduced` …; human-approved GitHub PR                      |
+| Graph-driven test impact analysis                     | `(Test)-[:TESTS]->()-[:CALLS*0..3]->(root cause)` picks the only tests a change can break (1 of 4 on the demo)                                                                                         |
+| Explainable results                                   | Every step carries its Cypher; the **evidence graph** shows exactly the nodes and edges the agent visited                                                                                              |
+| Memory across sessions                                | `Investigation` nodes linked to the functions they suspected or confirmed; recalled and scored by later runs. Fixes and their test runs are remembered too, and a verified fix confirms the root cause |
+| Shared state between agents                           | The web agent and an MCP client (e.g. Claude Code) read and write the same investigation memory                                                                                                        |
+| Company brain: knowledge from docs, tickets and chats | Issues, PRs, reviews and comments from the GitHub API (or a tracker export) become `Issue`, `PullRequest`, `Comment` and `Decision` nodes                                                              |
+| Who owns what, who knows what                         | CODEOWNERS → `(Team)-[:OWNS]->(File)`; authors and reviewers ranked per file; files only one person has changed                                                                                        |
+| Tracing decisions to their source                     | `(Decision)-[:DECIDED_IN]->(Comment)-[:ON]->(PullRequest)-[:INCLUDES]->(Commit)-[:TOUCHED]->(Function)`                                                                                                |
+| Keeping knowledge current                             | Idempotent `MERGE` sync that fetches only what changed since the last sync; decisions flagged when later commits change the code they govern                                                           |
+| Answers with clear sources                            | Every sentence of a brain answer cites a numbered graph node, and the answer's subgraph and Cypher are shown                                                                                           |
 
 ## Why it needs a graph
 
@@ -71,7 +72,7 @@ regenerated with `python scripts/capture_evidence.py`.
 (Test test_full_refund...)-[:TESTS]->(process_refund)        # happy path only
 ```
 
-The same goes for *why* the code looks like that, and who knew it would break:
+The same goes for _why_ the code looks like that, and who knew it would break:
 
 ```
 (Person {Priya Raman})-[:DECIDED]->(Decision "refund code always loads orders with get_order")
@@ -139,59 +140,59 @@ flowchart LR
 
 ### Nodes
 
-| Label | Key properties | Notes |
-|---|---|---|
-| `Repository` | `id`, `name`, `url`, `ingested_at` | One per repo graph |
-| `File` | `path`, `language`, `loc`, `is_test`, `module_code` | `module_code` = imports, constants and module state outside functions (used to write tests) |
-| `Class` | `id`, `name`, `file_path`, `start_line`, `end_line` | Also Go structs/interfaces, Java interfaces/enums |
-| `Function` | `id`, `name`, `qualified_name`, `file_path`, `start_line`, `end_line`, `signature`, `doc`, `code`, `complexity`, `tokens`, `in_test_file` | `tokens` = split identifier + path words, full-text indexed |
-| `Test` | `id`, `name`, `file_path`, `start_line`, `end_line`, `code` | Test functions and `it()/test()` cases |
-| `Commit` | `sha`, `message`, `timestamp` (ms), `author` | Last 300 commits |
-| `Person` | `email`, `name` | Commit authors |
-| `BugReport` | `id`, `title`, `description`, `status`, `created_at` | **Memory** |
-| `Investigation` | `id`, `title`, `status`, `summary`, `keywords`, `mode`, `payload` | **Memory**: full trace stored as JSON |
-| `Team` | `id`, `name` | **Knowledge**: from the tracker and CODEOWNERS (`@org/team`) |
-| `Issue` | `id`, `number`, `title`, `body`, `state`, `url`, `created_ms`, `closed_ms`, `labels` | **Knowledge** |
-| `PullRequest` | `id`, `number`, `title`, `body`, `state`, `url`, `created_ms`, `merged_ms` | **Knowledge** |
-| `Comment` | `id`, `body`, `url`, `created_ms`, `path` | **Knowledge**: issue/PR comments, review comments and review summaries |
-| `Decision` | `id`, `text`, `url`, `at_ms` | **Knowledge**: a sentence that records a decision, kept verbatim |
-| `Fix` | `id`, `status`, `summary`, `created_at`, `payload` | **Action**: a patch the agent proposed, with its verdict (`verified`, `regresses`, …) |
-| `TestRun` | `id`, `phase`, `passed`, `failed`, `errors`, `duration_ms`, `at` | **Action**: one sandbox run, on the original or the patched code |
+| Label           | Key properties                                                                                                                            | Notes                                                                                       |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `Repository`    | `id`, `name`, `url`, `ingested_at`                                                                                                        | One per repo graph                                                                          |
+| `File`          | `path`, `language`, `loc`, `is_test`, `module_code`                                                                                       | `module_code` = imports, constants and module state outside functions (used to write tests) |
+| `Class`         | `id`, `name`, `file_path`, `start_line`, `end_line`                                                                                       | Also Go structs/interfaces, Java interfaces/enums                                           |
+| `Function`      | `id`, `name`, `qualified_name`, `file_path`, `start_line`, `end_line`, `signature`, `doc`, `code`, `complexity`, `tokens`, `in_test_file` | `tokens` = split identifier + path words, full-text indexed                                 |
+| `Test`          | `id`, `name`, `file_path`, `start_line`, `end_line`, `code`                                                                               | Test functions and `it()/test()` cases                                                      |
+| `Commit`        | `sha`, `message`, `timestamp` (ms), `author`                                                                                              | Last 300 commits                                                                            |
+| `Person`        | `email`, `name`                                                                                                                           | Commit authors                                                                              |
+| `BugReport`     | `id`, `title`, `description`, `status`, `created_at`                                                                                      | **Memory**                                                                                  |
+| `Investigation` | `id`, `title`, `status`, `summary`, `keywords`, `mode`, `payload`                                                                         | **Memory**: full trace stored as JSON                                                       |
+| `Team`          | `id`, `name`                                                                                                                              | **Knowledge**: from the tracker and CODEOWNERS (`@org/team`)                                |
+| `Issue`         | `id`, `number`, `title`, `body`, `state`, `url`, `created_ms`, `closed_ms`, `labels`                                                      | **Knowledge**                                                                               |
+| `PullRequest`   | `id`, `number`, `title`, `body`, `state`, `url`, `created_ms`, `merged_ms`                                                                | **Knowledge**                                                                               |
+| `Comment`       | `id`, `body`, `url`, `created_ms`, `path`                                                                                                 | **Knowledge**: issue/PR comments, review comments and review summaries                      |
+| `Decision`      | `id`, `text`, `url`, `at_ms`                                                                                                              | **Knowledge**: a sentence that records a decision, kept verbatim                            |
+| `Fix`           | `id`, `status`, `summary`, `created_at`, `payload`                                                                                        | **Action**: a patch the agent proposed, with its verdict (`verified`, `regresses`, …)       |
+| `TestRun`       | `id`, `phase`, `passed`, `failed`, `errors`, `duration_ms`, `at`                                                                          | **Action**: one sandbox run, on the original or the patched code                            |
 
 ### Relationships
 
-| Type | Pattern | Properties |
-|---|---|---|
-| `CONTAINS` | `(Repository)->(File)`, `(File)->(Function\|Class\|Test)` | |
-| `HAS_METHOD` | `(Class)->(Function)` | |
-| `CALLS` | `(Function)->(Function)` | `line`, `resolution`, `count` |
-| `IMPORTS` | `(File)->(File)` | |
-| `TESTS` | `(Test)->(Function)` | `line` |
-| `MODIFIES` | `(Commit)->(File)` | `added`, `removed` |
-| `TOUCHED` | `(Commit)->(Function)` | a diff hunk overlapped the function |
-| `AUTHORED` | `(Person)->(Commit)` | |
-| `MENTIONS` | `(BugReport)->(Function)` | entry points found for the report |
-| `INVESTIGATED_IN` | `(BugReport)->(Investigation)` | |
-| `SUSPECTS` | `(Investigation)->(Function)` | `rank`, `score` |
-| `CONFIRMED` | `(Investigation)->(Function)` | the real root cause: human feedback, or `source: 'verification'` when a fix was proven |
-| `MEMBER_OF` | `(Person)->(Team)` | |
-| `OWNS` | `(Team\|Person)->(File)` | `pattern` (the CODEOWNERS rule that matched, last match wins) |
-| `OPENED` | `(Person)->(Issue\|PullRequest)` | |
-| `REVIEWED` | `(Person)->(PullRequest)` | `state` (`APPROVED`, `CHANGES_REQUESTED`, …) |
-| `WROTE` | `(Person)->(Comment)` | |
-| `ON` | `(Comment)->(Issue\|PullRequest)` | |
-| `ABOUT` | `(Comment)->(File)`, `(Decision)->(Function)` | review comment on a file; function named in the decision |
-| `FIXES` | `(PullRequest)->(Issue)` | "Fixes #4", "closes #8" |
-| `REFERENCES` | `(Issue\|PullRequest\|Comment)->(Issue\|PullRequest)` | any other `#123` |
-| `MENTIONS` | `(Issue\|PullRequest\|Comment)->(Function)` | function names in the text (backticked, snake_case or camelCase) |
-| `INCLUDES` | `(PullRequest)->(Commit)` | |
-| `DECIDED_IN` | `(Decision)->(Issue\|PullRequest\|Comment)` | |
-| `DECIDED` | `(Person)->(Decision)` | |
-| `PROPOSED` | `(Investigation)->(Fix)` | |
-| `PATCHES` | `(Fix)->(Function)` | |
-| `VERIFIED_BY` | `(Fix)->(TestRun)` | `phase` (`original`, `patched`) |
-| `RAN` | `(TestRun)->(Test)` | `outcome` (`passed`, `failed`, `error`, `skipped`) |
-| `OPENED_AS` | `(Fix)->(PullRequest)` | the PR a person approved |
+| Type              | Pattern                                                   | Properties                                                                             |
+| ----------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `CONTAINS`        | `(Repository)->(File)`, `(File)->(Function\|Class\|Test)` |                                                                                        |
+| `HAS_METHOD`      | `(Class)->(Function)`                                     |                                                                                        |
+| `CALLS`           | `(Function)->(Function)`                                  | `line`, `resolution`, `count`                                                          |
+| `IMPORTS`         | `(File)->(File)`                                          |                                                                                        |
+| `TESTS`           | `(Test)->(Function)`                                      | `line`                                                                                 |
+| `MODIFIES`        | `(Commit)->(File)`                                        | `added`, `removed`                                                                     |
+| `TOUCHED`         | `(Commit)->(Function)`                                    | a diff hunk overlapped the function                                                    |
+| `AUTHORED`        | `(Person)->(Commit)`                                      |                                                                                        |
+| `MENTIONS`        | `(BugReport)->(Function)`                                 | entry points found for the report                                                      |
+| `INVESTIGATED_IN` | `(BugReport)->(Investigation)`                            |                                                                                        |
+| `SUSPECTS`        | `(Investigation)->(Function)`                             | `rank`, `score`                                                                        |
+| `CONFIRMED`       | `(Investigation)->(Function)`                             | the real root cause: human feedback, or `source: 'verification'` when a fix was proven |
+| `MEMBER_OF`       | `(Person)->(Team)`                                        |                                                                                        |
+| `OWNS`            | `(Team\|Person)->(File)`                                  | `pattern` (the CODEOWNERS rule that matched, last match wins)                          |
+| `OPENED`          | `(Person)->(Issue\|PullRequest)`                          |                                                                                        |
+| `REVIEWED`        | `(Person)->(PullRequest)`                                 | `state` (`APPROVED`, `CHANGES_REQUESTED`, …)                                           |
+| `WROTE`           | `(Person)->(Comment)`                                     |                                                                                        |
+| `ON`              | `(Comment)->(Issue\|PullRequest)`                         |                                                                                        |
+| `ABOUT`           | `(Comment)->(File)`, `(Decision)->(Function)`             | review comment on a file; function named in the decision                               |
+| `FIXES`           | `(PullRequest)->(Issue)`                                  | "Fixes #4", "closes #8"                                                                |
+| `REFERENCES`      | `(Issue\|PullRequest\|Comment)->(Issue\|PullRequest)`     | any other `#123`                                                                       |
+| `MENTIONS`        | `(Issue\|PullRequest\|Comment)->(Function)`               | function names in the text (backticked, snake_case or camelCase)                       |
+| `INCLUDES`        | `(PullRequest)->(Commit)`                                 |                                                                                        |
+| `DECIDED_IN`      | `(Decision)->(Issue\|PullRequest\|Comment)`               |                                                                                        |
+| `DECIDED`         | `(Person)->(Decision)`                                    |                                                                                        |
+| `PROPOSED`        | `(Investigation)->(Fix)`                                  |                                                                                        |
+| `PATCHES`         | `(Fix)->(Function)`                                       |                                                                                        |
+| `VERIFIED_BY`     | `(Fix)->(TestRun)`                                        | `phase` (`original`, `patched`)                                                        |
+| `RAN`             | `(TestRun)->(Test)`                                       | `outcome` (`passed`, `failed`, `error`, `skipped`)                                     |
+| `OPENED_AS`       | `(Fix)->(PullRequest)`                                    | the PR a person approved                                                               |
 
 ### Indexes
 
@@ -216,6 +217,7 @@ All queries live in [`backend/app/services/cypher_queries.py`](backend/app/servi
 parameterized. The important ones:
 
 **Locate: stack frame → function** (file suffix + name + line inside the body)
+
 ```cypher
 MATCH (f:Function)
 WHERE f.name = $name AND f.file_path ENDS WITH $file_suffix
@@ -224,6 +226,7 @@ RETURN f.id AS id, f.qualified_name AS name, f.file_path AS file_path
 ```
 
 **Locate: full-text over identifiers and docstrings**
+
 ```cypher
 CALL db.idx.fulltext.queryNodes('Function', $q) YIELD node, score
 WHERE node.in_test_file = false
@@ -231,6 +234,7 @@ RETURN node.id AS id, node.qualified_name AS name, score ORDER BY score DESC LIM
 ```
 
 **Multi-hop callers**
+
 ```cypher
 MATCH p = (caller:Function)-[:CALLS*1..3]->(f:Function {id: $id})
 WHERE length(p) <= $depth AND caller.id <> $id
@@ -239,6 +243,7 @@ RETURN caller.id AS id, caller.qualified_name AS name, distance ORDER BY distanc
 ```
 
 **Test coverage, direct and through callers**
+
 ```cypher
 UNWIND $ids AS fid
 MATCH (f:Function {id: fid})
@@ -248,6 +253,7 @@ RETURN f.id AS id, collect(DISTINCT t.name) AS direct_tests, collect(DISTINCT ti
 ```
 
 **Who changed it recently**
+
 ```cypher
 UNWIND $ids AS fid
 MATCH (f:Function {id: fid})
@@ -257,6 +263,7 @@ RETURN f.id, collect({sha: c.sha, message: c.message, author: p.name})[0..$per_f
 ```
 
 **Graph algorithm: PageRank over the call graph** (centrality factor + hotspots)
+
 ```cypher
 CALL algo.pageRank('Function', 'CALLS') YIELD node, score
 WITH collect({id: node.id, score: score}) AS all, max(score) AS top
@@ -266,6 +273,7 @@ RETURN row.id AS id, row.score / top AS centrality
 ```
 
 **Shortest call path**
+
 ```cypher
 MATCH (a:Function {id: $src}), (b:Function {id: $dst})
 WITH shortestPath((a)-[:CALLS*1..8]->(b)) AS p
@@ -273,6 +281,7 @@ RETURN [n IN nodes(p) | n.qualified_name] AS path
 ```
 
 **Blast radius**
+
 ```cypher
 MATCH (f:Function {id: $id})
 OPTIONAL MATCH (caller:Function)-[:CALLS*1..4]->(f)
@@ -282,6 +291,7 @@ RETURN size(callers) AS affected_functions, collect(DISTINCT t.name) AS covering
 ```
 
 **Expert routing (who knows this code)**
+
 ```cypher
 MATCH (f:Function {id: $id})
 OPTIONAL MATCH (p1:Person)-[:AUTHORED]->(:Commit)-[:TOUCHED]->(f)
@@ -290,6 +300,7 @@ OPTIONAL MATCH (p2:Person)-[:AUTHORED]->(:Commit)-[:MODIFIES]->(:File {path: f.f
 ```
 
 **Risky recent changes: untested functions touched by the last N commits, most-called first**
+
 ```cypher
 MATCH (c:Commit)
 WITH c ORDER BY c.timestamp DESC LIMIT $n
@@ -305,6 +316,7 @@ ORDER BY callers DESC, last_changed DESC
 ```
 
 **Test writing: a function, how it is used, and what it depends on**
+
 ```cypher
 MATCH (file:File)-[:CONTAINS]->(f:Function {id: $id})
 OPTIONAL MATCH (caller:Function)-[:CALLS]->(f)
@@ -317,6 +329,7 @@ RETURN f.code AS code, file.module_code AS module_code, size(callers) AS caller_
 ```
 
 **Test writing: the nearest existing tests, as style examples (up to two calls away)**
+
 ```cypher
 MATCH (f:Function {id: $id})
 MATCH (t:Test)-[:TESTS]->(:Function)-[:CALLS*1..2]-(f)
@@ -326,6 +339,7 @@ ORDER BY links DESC, t.name LIMIT 2
 ```
 
 **Memory: recall earlier investigations of these functions or their neighbours**
+
 ```cypher
 UNWIND $ids AS fid
 MATCH (f:Function {id: fid})
@@ -336,6 +350,7 @@ RETURN f.id AS fn_id, g.qualified_name AS past_fn, type(r) AS relation, b.title 
 ```
 
 **Company brain: why a function is the way it is** (each change, with the pull request it came from)
+
 ```cypher
 MATCH (f:Function {id: $id})<-[:TOUCHED]-(c:Commit)
 OPTIONAL MATCH (author:Person)-[:AUTHORED]->(c)
@@ -345,6 +360,7 @@ RETURN c.sha AS sha, c.message AS message, author.name AS author, pr.number AS p
 ```
 
 **Company brain: the decisions that govern code** (named in the decision, or changed by the PR it was made in)
+
 ```cypher
 MATCH (d:Decision)-[:DECIDED_IN]->(src)
 OPTIONAL MATCH (src)-[:ON]->(parent)
@@ -357,6 +373,7 @@ RETURN d.text AS text, who.name AS author, item.number AS item_number,
 ```
 
 **Company brain: knowledge drift** (code a decision governs, changed later by commits from outside its PR)
+
 ```cypher
 MATCH (d:Decision)
 OPTIONAL MATCH (d)-[:DECIDED_IN]->(pr1:PullRequest)
@@ -371,6 +388,7 @@ RETURN d.id, f.qualified_name AS function, later.message, lpr.number AS pr, coll
 ```
 
 **Company brain: who owns a file** (CODEOWNERS teams with their members; authors and reviewers come from two more queries)
+
 ```cypher
 MATCH (file:File {path: $path})
 OPTIONAL MATCH (t:Team)-[o:OWNS]->(file)
@@ -382,6 +400,7 @@ RETURN p.name AS name, count(DISTINCT pr) AS reviews
 ```
 
 **Company brain: knowledge held by one person**
+
 ```cypher
 MATCH (f:File) WHERE f.is_test = false
 MATCH (p:Person)-[:AUTHORED]->(:Commit)-[:MODIFIES]->(f)
@@ -392,6 +411,7 @@ RETURN f.path, authors[0] AS only_author, count(DISTINCT o) AS owners, count(DIS
 ```
 
 **Fix verification: test impact analysis** (tests that can reach the root cause, and how far away)
+
 ```cypher
 MATCH (f:Function {id: $id})
 MATCH p = (t:Test)-[:TESTS]->(:Function)-[:CALLS*0..3]->(f)
@@ -400,6 +420,7 @@ RETURN t.id AS id, t.name AS name, t.file_path AS file_path, hops - 1 AS distanc
 ```
 
 **Fix verification: the proof, written back**
+
 ```cypher
 MATCH (i:Investigation {id: $investigation_id}), (f:Function {id: $fn_id})
 CREATE (x:Fix {id: $id, status: $status, summary: $summary, created_at: $created_at, payload: $payload})
@@ -474,11 +495,11 @@ test drafts need a model, so the UI says the server runs graph-only.
 
 1. **FalkorDB Cloud:** create a free instance at [app.falkordb.cloud](https://app.falkordb.cloud) and note its host,
    port, username and password.
-2. **Render:** *New → Blueprint*, pick this GitHub repo. `render.yaml` builds `backend/Dockerfile` (which bakes in the
+2. **Render:** _New → Blueprint_, pick this GitHub repo. `render.yaml` builds `backend/Dockerfile` (which bakes in the
    demo repo at `/demo/acme-shop`) and asks for `FALKORDB_HOST`, `FALKORDB_PORT`, `FALKORDB_USERNAME`,
    `FALKORDB_PASSWORD` and `CORS_ORIGINS` (your Vercel URL; you can fill it in after step 3). Set `FALKORDB_SSL=true`
    if your instance requires TLS. Check `https://<service>.onrender.com/api/v1/health` shows `"falkordb": true`.
-3. **Vercel:** *Add New → Project*, pick this repo, set **Root Directory** to `frontend` and the environment variable
+3. **Vercel:** _Add New → Project_, pick this repo, set **Root Directory** to `frontend` and the environment variable
    `VITE_API_URL=https://<service>.onrender.com/api/v1`. `frontend/vercel.json` sends every route to the app.
 4. Open the Vercel URL, go to `/repos` and connect **`/demo/acme-shop`** (or any public GitHub URL).
 
@@ -494,9 +515,16 @@ demos only.
 automatically. For other clients:
 
 ```json
-{ "mcpServers": { "codebase-detective": {
-    "command": "/abs/path/backend/venv/bin/python", "args": ["-m", "app.mcp_server"],
-    "cwd": "/abs/path/backend", "env": { "FALKORDB_HOST": "localhost", "FALKORDB_PORT": "6379" } } } }
+{
+  "mcpServers": {
+    "codebase-detective": {
+      "command": "/abs/path/backend/venv/bin/python",
+      "args": ["-m", "app.mcp_server"],
+      "cwd": "/abs/path/backend",
+      "env": { "FALKORDB_HOST": "localhost", "FALKORDB_PORT": "6379" }
+    }
+  }
+}
 ```
 
 Tools: `list_repositories`, `search_code`, `get_function`, `get_callers`, `get_callees`, `get_tests`,
@@ -518,7 +546,7 @@ Investigations started over MCP show up in the web UI's **Agent memory** panel a
 3. **Watch the trace stream in**: 3/3 stack frames matched → callers and callees expanded → tests and commits gathered →
    PageRank → memory checked → ranked. Expand any step to see its Cypher.
 4. **Verdict:** `process_refund`. It sits on the stack, it was changed most recently (Dana Kim's
-   *"Refactor refund flow: … simplify order lookup"*, which switched to `find_order`, and that returns `None`), and its
+   _"Refactor refund flow: … simplify order lookup"_, which switched to `find_order`, and that returns `None`), and its
    only test covers the happy path.
 5. **Evidence graph tab**: the exact subgraph the agent traversed, with the root cause outlined in red.
 6. **Fix tab**: patch (with Ollama), current source, reviewers (Dana Kim, Priya Raman), blast radius, and **How this
@@ -527,7 +555,7 @@ Investigations started over MCP show up in the web UI's **Agent memory** panel a
    outdated because PR #12 changed `process_refund` afterwards. Open issue #13 mentions it.
 7. **Suspects tab → "This is the root cause"** writes a `CONFIRMED` edge.
 8. **Run a second, differently worded bug** ("Partial refund crashes for deleted orders", no stack trace). The memory
-   step reports *"process_refund was the confirmed root cause of 'Refund of unknown order returns 500'"*, and its memory
+   step reports _"process_refund was the confirmed root cause of 'Refund of unknown order returns 500'"_, and its memory
    factor goes from 0 to 1.0.
 9. **Back on the dashboard, Risky recent changes:** switch between 3 and 10 commits. At 3 it shows Lee Okafor's
    `send_email` and `notify_refund` (1 caller each); at 10 the shared database helpers in `shop/db.py` (2 callers each)
@@ -535,9 +563,9 @@ Investigations started over MCP show up in the web UI's **Agent memory** panel a
 10. **Suggest test** on `update_stock`: the dialog shows its 2 callers, the nearest test
     (`test_full_refund_marks_order_refunded`, two calls away) and a draft pytest file for `tests/test_db.py`.
 11. **Investigate** on any row opens a new investigation already filled in for that change.
-12. **Company brain** (sidebar): ask *"Why does process_refund use find_order?"*. The answer cites PR #12, the decision
+12. **Company brain** (sidebar): ask _"Why does process_refund use find_order?"_. The answer cites PR #12, the decision
     in PR #6, the review gap and open issue #13. The **Graph** tab shows the subgraph it came from and **Queries** the
-    Cypher. Ask *"Who should review a change to shop/payments/refunds.py?"* for @payments and its members, ranked
+    Cypher. Ask _"Who should review a change to shop/payments/refunds.py?"_ for @payments and its members, ranked
     with reasons. The side panels show every decision (the one that drifted first), who owns what, and files only one
     person has changed. **Sync** re-reads the tracker and merges what changed. `/brain?repo=<id>&q=<question>` links
     straight to an answer.
@@ -548,31 +576,32 @@ Investigations started over MCP show up in the web UI's **Agent memory** panel a
     - **Fix verified**, then the pull request draft and **Download .patch**.
 
     The investigation is now `confirmed`.
-14. Optionally ask Claude Code: *"Use codebase-detective to find who should review a change to process_refund"*. It
+
+14. Optionally ask Claude Code: _"Use codebase-detective to find who should review a change to process_refund"_. It
     calls `find_experts` or `who_owns` over MCP, or `ask_company_brain` for a cited answer.
 
 ## API
 
-| Method | Path | |
-|---|---|---|
-| `POST` | `/api/v1/repos` | Connect a repo (`{name, url, branch?, github_token?}`); ingests in the background |
-| `GET` | `/api/v1/repos` · `/api/v1/repos/{id}` · `/api/v1/repos/{id}/stats` | |
-| `DELETE` | `/api/v1/repos/{id}` | Drops the repo graph |
-| `POST` | `/api/v1/investigations` | Start (`{repository_id, title, description, use_llm}`) |
-| `GET` | `/api/v1/investigations/{id}/events` | Server-sent events: each step as it happens, then the result |
-| `GET` | `/api/v1/investigations/{id}` · `/api/v1/investigations?repository_id=` | |
-| `POST` | `/api/v1/investigations/{id}/confirm` | Record the real root cause (`{function_id}`) |
-| `POST` | `/api/v1/investigations/{id}/fix/draft` | Corrected function, a drafted regression test and the graph-selected tests |
-| `POST` | `/api/v1/investigations/{id}/verify` | Server-sent events: sandbox run before and after the patch (`{patched_code \| diff, test_code}`), then the verdict |
-| `GET` | `/api/v1/investigations/{id}/fixes` · `/fixes/{fix_id}/patch` | Every verified or failed fix; the fix as a `git am` patch |
-| `POST` | `/api/v1/investigations/{id}/fixes/{fix_id}/pull-request` | Open the PR on GitHub (`{approve: true, github_token?}`); draft unless verified |
-| `GET` | `/api/v1/graph/investigation/{id}` | Evidence subgraph |
-| `GET` | `/api/v1/graph/{repo_id}/hotspots` · `/risky-changes?commits=N` · `/function/{fid}` · `/function/{fid}/source` | |
-| `POST` | `/api/v1/graph/{repo_id}/function/{fid}/suggest-test` | Graph context for testing the function, plus a draft test from the local model |
-| `POST` | `/api/v1/brain/{repo_id}/ask` | Company brain answer (`{question, use_llm}`) with numbered sources, steps (Cypher) and its subgraph |
-| `GET` | `/api/v1/brain/{repo_id}/overview` | Knowledge source and counts, ownership, decisions with drift, files known by one person |
-| `GET` | `/api/v1/brain/{repo_id}/function/{fid}/why` · `/owners?target=` | `why_code` and `who_owns` |
-| `POST` | `/api/v1/brain/{repo_id}/sync` | Re-read the tracker and MERGE what changed since the last sync |
+| Method   | Path                                                                                                           |                                                                                                                    |
+| -------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `POST`   | `/api/v1/repos`                                                                                                | Connect a repo (`{name, url, branch?, github_token?}`); ingests in the background                                  |
+| `GET`    | `/api/v1/repos` · `/api/v1/repos/{id}` · `/api/v1/repos/{id}/stats`                                            |                                                                                                                    |
+| `DELETE` | `/api/v1/repos/{id}`                                                                                           | Drops the repo graph                                                                                               |
+| `POST`   | `/api/v1/investigations`                                                                                       | Start (`{repository_id, title, description, use_llm}`)                                                             |
+| `GET`    | `/api/v1/investigations/{id}/events`                                                                           | Server-sent events: each step as it happens, then the result                                                       |
+| `GET`    | `/api/v1/investigations/{id}` · `/api/v1/investigations?repository_id=`                                        |                                                                                                                    |
+| `POST`   | `/api/v1/investigations/{id}/confirm`                                                                          | Record the real root cause (`{function_id}`)                                                                       |
+| `POST`   | `/api/v1/investigations/{id}/fix/draft`                                                                        | Corrected function, a drafted regression test and the graph-selected tests                                         |
+| `POST`   | `/api/v1/investigations/{id}/verify`                                                                           | Server-sent events: sandbox run before and after the patch (`{patched_code \| diff, test_code}`), then the verdict |
+| `GET`    | `/api/v1/investigations/{id}/fixes` · `/fixes/{fix_id}/patch`                                                  | Every verified or failed fix; the fix as a `git am` patch                                                          |
+| `POST`   | `/api/v1/investigations/{id}/fixes/{fix_id}/pull-request`                                                      | Open the PR on GitHub (`{approve: true, github_token?}`); draft unless verified                                    |
+| `GET`    | `/api/v1/graph/investigation/{id}`                                                                             | Evidence subgraph                                                                                                  |
+| `GET`    | `/api/v1/graph/{repo_id}/hotspots` · `/risky-changes?commits=N` · `/function/{fid}` · `/function/{fid}/source` |                                                                                                                    |
+| `POST`   | `/api/v1/graph/{repo_id}/function/{fid}/suggest-test`                                                          | Graph context for testing the function, plus a draft test from the local model                                     |
+| `POST`   | `/api/v1/brain/{repo_id}/ask`                                                                                  | Company brain answer (`{question, use_llm}`) with numbered sources, steps (Cypher) and its subgraph                |
+| `GET`    | `/api/v1/brain/{repo_id}/overview`                                                                             | Knowledge source and counts, ownership, decisions with drift, files known by one person                            |
+| `GET`    | `/api/v1/brain/{repo_id}/function/{fid}/why` · `/owners?target=`                                               | `why_code` and `who_owns`                                                                                          |
+| `POST`   | `/api/v1/brain/{repo_id}/sync`                                                                                 | Re-read the tracker and MERGE what changed since the last sync                                                     |
 
 ## Project structure
 
@@ -637,31 +666,36 @@ reviews and comments only. The demo's tracker export (`.cd-knowledge.json`) is s
 This project was built with heavy use of an AI coding assistant, **Claude Code**. To be clear about who did what:
 
 **Done by me (Chandan):**
-- Chose the project idea and the features, and directed the build and every change.
-- **Chose FalkorDB as the core of the project** and worked with it hands-on: ran it with Docker, explored the code
-  graph in the FalkorDB Browser, and used the Browser to write, run and check Cypher queries before they went into
-  the app.
-- The five recent query features on the dashboard's **Risky recent changes** card:
-  1. **Risky-changes query:** built it step by step in the FalkorDB Browser, checking the results at each step, and
-     found the missing `LIMIT` that produced 25 rows instead of 4.
-  2. **Commit-window filter:** wrote the 3/5/7/10-commit filter on the card.
-  3. **How many functions depend on it:** extended the query with `OPTIONAL MATCH (caller:Function)-[:CALLS]->(f)` and
-     `count(DISTINCT caller)` so each change shows its caller count and the most-depended-on changes come first. Ran
-     and checked it in the FalkorDB Browser and wrote the test assertion for it.
-  4. **Giving the solution:** designed the **Investigate** button so a risky change opens a new investigation already
-     filled in for it, which leads to the root cause, a patch, reviewers and the blast radius.
-  5. **Suggest test:** designed what a suggested test should be built from in the graph (the function's callers,
-     callees and the nearest existing tests) and checked the drafts it produced on the demo repo.
-- Tested it on the demo repo and on my own repository, and found real bugs that were then fixed: a blank page, a
-  PageRank error on my todolist repo, and the app using 98% of my machine's RAM.
-- Ran the setup with Docker and Ollama, and reviewed the results of each feature.
 
-**Written by Claude Code:** most of the code, including the ingestion pipeline, the agent, the graph tools, the MCP
-server, the API, the frontend (the landing page, the light/dark theme and the UI redesign), the demo repository and
-the tests, most of the Cypher queries, and the code for the Investigate and Suggest test buttons and the test writer,
-from my designs. Also the Company Brain layer (knowledge ingestion from GitHub and the tracker export, decision
-extraction and drift, ownership, the brain page and its tests). Also the fix-verification loop (graph test
-selection, the sandbox, import repair, the verdicts, PR drafting and the Verify & ship tab).
+- **The idea:** a bug-investigation agent that reasons over a FalkorDB code graph of functions, calls, tests, commits
+  and the people who wrote them.
+- **The five Risky recent changes features** on the dashboard:
+  1. **Risky-changes query:** built step by step in the FalkorDB Browser, checking the results at each step. Found
+     the missing `LIMIT` that produced 25 rows instead of 4.
+  2. **Commit-window filter:** the 3/5/7/10-commit filter on the card.
+  3. **How many functions depend on it:** extended the query with `OPTIONAL MATCH (caller:Function)-[:CALLS]->(f)`
+     and `count(DISTINCT caller)`, so each risky change shows how many functions call it and the most-depended-on
+     changes come first. Also wrote the test assertion for it.
+  4. the API and the frontend (the landing page, the light/dark theme, the UI redesign),
+  5. **Giving the solution:** the **Investigate** button, which opens a new investigation already filled in for a
+     risky change and leads to the root cause, a patch, reviewers and the blast radius.
+  6. **Suggest test:** what a suggested test is built from in the graph (the function's callers, callees and the
+     nearest existing tests). Checked the drafts it produced on the demo repo.
+- **The Cypher I built:** the risky-changes query and its caller-count extension above, written and run in the
+  FalkorDB Browser before they went into the app.
+- **Checking in the FalkorDB Browser:** explored the code graph and checked Cypher queries and their results in the
+  FalkorDB Browser.
+
+**Done by AI (Claude Code):** the rest of the code, from my directions:
+
+- the ingestion pipeline (tree-sitter parsing, call resolution, git history),
+- the investigation agent and its scoring, the LLM loop and patch writing,
+- the code behind the Investigate and Suggest test buttons, and the test writer,
+- the Company Brain layer (knowledge ingestion from GitHub and the tracker export, decision extraction and drift,
+  ownership, the brain page),
+- the fix-verification loop (graph test selection, the sandbox, import repair, the verdicts, PR drafting, the Verify
+  & ship tab),
+- the demo repository, the tests, the deployment setup, and this documentation.
 
 ## License
 
