@@ -70,7 +70,10 @@ def impacted_tests(graph_name: str, fn_id: str) -> Dict[str, Any]:
 # ------------------------------------------------------------------ drafting
 
 def build_regression_prompt(inv: Dict[str, Any], ctx: Dict[str, Any], test_path: str) -> str:
+    """The test is written against the root-cause function, knowing the proposed fix, so test and fix agree on what
+    correct behaviour is. It still has to fail on the original code, so a test tailored to a wrong fix is caught."""
     verdict = inv.get("verdict") or {}
+    patched = (inv.get("fix") or {}).get("patched_code") or ""
     examples = "\n\n".join(f"# {t['file_path']}\n{(t.get('code') or '')[:1200]}" for t in ctx["example_tests"])
     callees = "\n\n".join(f"# {c['file_path']} ({c['name']})\n{(c.get('code') or '')[:900]}" for c in ctx["callees"])
     callers = "\n\n".join(f"# {c['file_path']} ({c['name']})\n{(c.get('code') or '')[:900]}" for c in ctx["callers"])
@@ -88,12 +91,14 @@ def build_regression_prompt(inv: Dict[str, Any], ctx: Dict[str, Any], test_path:
            if examples else "")
         + (f"Team decisions about this code (from the company knowledge graph); they define the correct "
            f"behaviour:\n{decisions}\n\n" if decisions else "")
-        + f"Write a pytest regression test file that will be saved as `{test_path}`. It must FAIL on the code "
+        + (f"The proposed fix rewrites `{ctx['name']}` as:\n```\n{patched}\n```\n\n" if patched else "")
+        + f"Write a pytest regression test file that will be saved as `{test_path}`. Call `{ctx['name']}` itself "
+        "(not a caller or an API handler), so the test checks the same function the fix changes. It must FAIL on the code "
         "above because of the reported bug, and PASS once the bug is fixed. The error in the bug report IS the bug: "
         "never expect it (no pytest.raises for it, no assertion on its message). Call the code the way the bug "
         "report describes, and assert the correct behaviour (for example that a clear, specific exception is raised "
-        "or an error result is returned), not merely that no exception escapes. If the code or a team decision "
-        "already defines an exception for this case, expect that exception with pytest.raises. Import every name "
+        "or an error result is returned), not merely that no exception escapes. If a team decision or the proposed fix "
+        "defines an exception for this case, expect that exception with pytest.raises. Import every name "
         "from its real "
         "module and use only names and data that exist in the code shown. Write one or two test functions. "
         "Output a single ```python code block``` with the complete file."

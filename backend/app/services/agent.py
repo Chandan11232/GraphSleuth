@@ -596,12 +596,17 @@ class Investigation:
         for c in (callees.data or {}).get("callees", [])[:4]:
             code = (self.tools.get_function(c["id"]).data or {}).get("code", "")
             context.append(f"# {c['file_path']}\n{code[:900]}")
+        decisions = "\n".join(f"- {d['text']}" for d in (history.data or {}).get("decisions", []))
         prompt = (
             f"Bug report:\n{self.title}\n{self.description}\n\nRoot cause (from graph investigation): "
             f"{fn.get('name')} in {fn.get('file_path')} lines {fn.get('start_line')}-{fn.get('end_line')}.\n"
             f"Why: {self.verdict['explanation']}\n\nCurrent code of {fn.get('file_path')} "
             f"(starting at line {fn.get('start_line')}):\n```\n{fn.get('code')}\n```\n\n"
             f"Functions it calls:\n```\n" + "\n\n".join(context) + "\n```\n\n"
+            + (f"Team decisions about this code (from the company knowledge graph). The fix must follow them, using "
+               f"the functions and exceptions they name:\n{decisions}\n\n" if decisions else "")
+            + "Prefer the error handling the codebase already has (an existing exception or a function that already "
+            "raises it) over inventing a new one.\n\n"
             "First write one line starting with 'Cause:' naming the exact defect (which value is wrong and where "
             "it comes from; check what the called functions can return). Then output the COMPLETE corrected "
             f"version of the code shown above for {fn.get('name')} in a single ```code block```: start with exactly "
