@@ -11,14 +11,24 @@ from app.services.graph_tools import GraphTools
 router = APIRouter()
 
 KEEP_PROPS = ("id", "name", "qualified_name", "file_path", "path", "start_line", "end_line", "signature",
-              "complexity", "message", "author", "timestamp", "sha", "email", "title", "status", "language")
+              "complexity", "message", "author", "timestamp", "sha", "email", "title", "status", "language",
+              "number", "url", "state", "text", "login")
 
 
 def node_out(n: Dict[str, Any]) -> Dict[str, Any]:
     props = n["properties"]
     label = n["labels"][0] if n["labels"] else "Node"
-    name = (props.get("qualified_name") or props.get("name") or props.get("title") or props.get("path")
-            or (props.get("message") or "")[:40] or props.get("email") or str(n["_id"]))
+    if label in ("Issue", "PullRequest"):
+        name = f"#{props.get('number')} {props.get('title', '')}"
+    elif label == "Decision":
+        name = (props.get("text") or "")[:60]
+    elif label == "Comment":
+        name = (props.get("body") or "")[:60]
+    elif label == "Team":
+        name = f"@{props.get('name')}"
+    else:
+        name = (props.get("qualified_name") or props.get("name") or props.get("title") or props.get("path")
+                or (props.get("message") or "")[:40] or props.get("email") or str(n["_id"]))
     return {"id": str(n["_id"]), "type": label, "label": name,
             "properties": {k: props[k] for k in KEEP_PROPS if k in props}}
 
@@ -43,18 +53,8 @@ async def evidence_graph(investigation_id: str) -> Dict[str, Any]:
     if not result:
         raise HTTPException(status_code=404, detail="Investigation not found")
     repo = store.repo_for_investigation(investigation_id)
-    db = get_falkordb()
-    g = repo["graph_name"]
     ids: List[str] = list(result.get("evidence_ids", [])) + [result["bug_report_id"], investigation_id]
-
-    nodes: Dict[str, Dict[str, Any]] = {}
-    for row in db.ro(g, "UNWIND $ids AS k MATCH (n) WHERE n.id = k OR n.sha = k OR n.email = k RETURN n", {"ids": ids}):
-        nodes[str(row["n"]["_id"])] = node_out(row["n"])
-    edges: Dict[str, Dict[str, Any]] = {}
-    for row in db.ro(g, Q.SUBGRAPH_BETWEEN, {"ids": ids}):
-        e = edge_out(row["r"])
-        if e["source"] in nodes and e["target"] in nodes:
-            edges[e["id"]] = e
+    nodes, edges = subgraph(repo["graph_name"], ids)
 
     by_fn = {s["id"]: s for s in result.get("suspects", [])}
     verdict_id = (result.get("verdict") or {}).get("id")
@@ -66,6 +66,21 @@ async def evidence_graph(investigation_id: str) -> Dict[str, Any]:
         if fid and fid == verdict_id:
             n["properties"]["root_cause"] = True
     return {"nodes": list(nodes.values()), "edges": list(edges.values())}
+
+
+def subgraph(graph_name: str, ids: List[str]):
+    """The nodes with these keys (id, commit sha or person email) and the real edges between them."""
+    db = get_falkordb()
+    nodes: Dict[str, Dict[str, Any]] = {}
+    for row in db.ro(graph_name, "UNWIND $ids AS k MATCH (n) WHERE n.id = k OR n.sha = k OR n.email = k RETURN n",
+                     {"ids": ids}):
+        nodes[str(row["n"]["_id"])] = node_out(row["n"])
+    edges: Dict[str, Dict[str, Any]] = {}
+    for row in db.ro(graph_name, Q.SUBGRAPH_BETWEEN, {"ids": ids}):
+        e = edge_out(row["r"])
+        if e["source"] in nodes and e["target"] in nodes:
+            edges[e["id"]] = e
+    return nodes, edges
 
 
 @router.get("/{repo_id}/function/{function_id}")

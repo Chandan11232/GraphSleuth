@@ -11,11 +11,18 @@ const TYPE_STYLE: Record<string, { bg: string; border: string; tag: string }> = 
   Test: { bg: '#f0fdf4', border: '#86efac', tag: 'Test' },
   Commit: { bg: '#fffbeb', border: '#fcd34d', tag: 'Commit' },
   Person: { bg: '#fdf4ff', border: '#e879f9', tag: 'Person' },
+  Team: { bg: '#fdf4ff', border: '#c026d3', tag: 'Team' },
+  PullRequest: { bg: '#ecfeff', border: '#22d3ee', tag: 'Pull request' },
+  Issue: { bg: '#fff7ed', border: '#fb923c', tag: 'Issue' },
+  Comment: { bg: '#f8fafc', border: '#cbd5e1', tag: 'Comment' },
+  Decision: { bg: '#fefce8', border: '#ca8a04', tag: 'Decision' },
 }
 
 const EDGE_COLOR: Record<string, string> = {
   CALLS: '#3b82f6', TESTS: '#22c55e', TOUCHED: '#f59e0b', AUTHORED: '#d946ef', MENTIONS: '#ef4444',
   SUSPECTS: '#8b5cf6', CONFIRMED: '#16a34a', INVESTIGATED_IN: '#a78bfa',
+  INCLUDES: '#06b6d4', FIXES: '#f97316', REVIEWED: '#d946ef', OPENED: '#d946ef', DECIDED_IN: '#ca8a04',
+  OWNS: '#c026d3', MEMBER_OF: '#c026d3', ON: '#94a3b8', REFERENCES: '#94a3b8', ABOUT: '#ca8a04',
 }
 
 function GraphCard({ data }: NodeProps<GraphNode>) {
@@ -72,8 +79,13 @@ function layout(graph: GraphResponse, hidden: Set<string>) {
   return { nodes, edges: flowEdges }
 }
 
-export function EvidenceGraph({ graph, onSelect }: { graph: GraphResponse; onSelect?: (n: GraphNode) => void }) {
-  const [hidden, setHidden] = useState<Set<string>>(new Set(['Person']))
+export function EvidenceGraph({ graph, onSelect, initialHidden = ['Person'], hint }: {
+  graph: GraphResponse
+  onSelect?: (n: GraphNode) => void
+  initialHidden?: string[]
+  hint?: string
+}) {
+  const [hidden, setHidden] = useState<Set<string>>(new Set(initialHidden))
   const types = useMemo(() => Array.from(new Set(graph.nodes.map(n => n.type))), [graph])
   const { nodes, edges } = useMemo(() => layout(graph, hidden), [graph, hidden])
 
@@ -97,7 +109,7 @@ export function EvidenceGraph({ graph, onSelect }: { graph: GraphResponse; onSel
             </button>
           )
         })}
-        <span className="text-muted-foreground ml-auto self-center">click a type to hide it · the red-bordered node is the verdict</span>
+        <span className="text-muted-foreground ml-auto self-center">{hint ?? 'click a type to hide it · the red-bordered node is the verdict'}</span>
       </div>
       <div className="flex-1 min-h-0">
         <ReactFlow

@@ -13,6 +13,11 @@ from app.core.falkordb import get_falkordb
 from app.services import cypher_queries as Q
 
 ID_RE = re.compile(r"^[0-9a-f]{16}$")
+# Words that carry no meaning in a question to the company brain.
+QUESTION_WORDS = set("""why what who whom whose how when where which does did done doing the and for are was were
+is isn way ways this that these those with from about our ours we you your they them their use uses used using
+should would could can will shall has have had not any all some there here into onto than then also just like
+get gets got make makes made thing things know knows tell ask asked""".split())
 
 
 def _stem(word: str) -> str:
@@ -272,6 +277,168 @@ class GraphTools:
                           f"{n} related past investigation(s) in memory" + detail, cypher,
                           {r["past_fn_id"] for r in by_fn})
 
+    # ---------------------------------------------------- company knowledge
+
+    def why_code(self, function: str) -> ToolResult:
+        """Why a function is the way it is: the commits that changed it, the pull requests they came
+        from (who opened and reviewed them, which issues they fixed), the decisions that govern it and
+        whether the code has changed since, and the discussions that name it."""
+        args = {"function": function}
+        fn = self._need(function, "why_code", args)
+        if isinstance(fn, ToolResult):
+            return fn
+        changes = self._ro(Q.FUNCTION_HISTORY, {"id": fn["id"], "limit": 8})
+        numbers = list(dict.fromkeys(c["pr"] for c in changes if c["pr"] is not None))
+        prs = {r["number"]: r for r in self._ro(Q.PR_CONTEXT, {"numbers": numbers})} if numbers else {}
+        for c in changes:
+            c["pull_request"] = prs.get(c.pop("pr"))
+        decisions = [d for d in self.decisions(limit=200).data if fn["id"] in d["function_ids"]]
+        discussions = self._ro(Q.FUNCTION_DISCUSSIONS, {"id": fn["id"]})
+        visited = {fn["id"], *(c["sha"] for c in changes), *(c["email"] for c in changes if c["email"])}
+        for pr in prs.values():
+            visited.add(pr["id"])
+            visited.update(i["id"] for i in pr["fixes"])
+        visited.update(d["id"] for d in decisions)
+        visited.update(d["id"] for d in discussions)
+
+        parts = []
+        latest = changes[0] if changes else None
+        if latest and latest["pull_request"]:
+            pr = latest["pull_request"]
+            approved = [r["name"] for r in pr["reviews"] if r["state"] == "APPROVED"]
+            parts.append(f"last changed in PR #{pr['number']} \"{pr['title'][:60]}\" by {pr['opened_by'] or latest['author']}"
+                         + (f" (approved by {', '.join(approved)})" if approved else " (no approving review)"))
+        elif latest:
+            parts.append(f"last changed by {latest['author']}: \"{latest['message'][:60]}\" (no pull request on record)")
+        if decisions:
+            drifted = [d for d in decisions if d["drift"]]
+            parts.append(f"{len(decisions)} decision(s) apply" + (f", {len(drifted)} possibly outdated" if drifted else ""))
+        open_items = [d for d in discussions if d["state"] == "open"]
+        if open_items:
+            parts.append("open: " + ", ".join(f"#{d['number']} {d['title'][:40]}" for d in open_items[:2]))
+        return ToolResult("why_code", args, {"function": fn, "changes": changes, "decisions": decisions,
+                                             "discussions": discussions},
+                          f"{fn['name']}: " + ("; ".join(parts) if parts else "no history on record"),
+                          [compact(Q.FUNCTION_HISTORY), compact(Q.PR_CONTEXT), compact(Q.DECISIONS),
+                           compact(Q.DECISION_DRIFT), compact(Q.FUNCTION_DISCUSSIONS)], visited)
+
+    def decisions(self, limit: int = 50) -> ToolResult:
+        rows = self._ro(Q.DECISIONS, {"limit": limit})
+        drift: Dict[str, List[Dict[str, Any]]] = {}
+        for r in self._ro(Q.DECISION_DRIFT, {}) if rows else []:
+            drift.setdefault(r.pop("id"), []).append(r)
+        for d in rows:
+            fns = {f["id"]: f for f in d.pop("about") + d.pop("changed") if f["id"]}
+            d["functions"] = list(fns.values())
+            d["function_ids"] = list(fns)
+            seen = set()
+            d["drift"] = []
+            for r in drift.get(d["id"], []):  # one line per later commit, naming the functions it changed
+                if r["sha"] in seen:
+                    next(x for x in d["drift"] if x["sha"] == r["sha"])["functions"].append(r["function"])
+                    continue
+                seen.add(r["sha"])
+                d["drift"].append({**{k: r[k] for k in ("sha", "message", "timestamp", "author", "pr", "reviewers")},
+                                   "functions": [r["function"]]})
+        drifted = [d for d in rows if d["drift"]]
+        return ToolResult("decisions", {"limit": limit}, rows,
+                          f"{len(rows)} decision(s) on record" + (f"; {len(drifted)} govern code that has changed since"
+                                                                 if drifted else ""),
+                          [compact(Q.DECISIONS), compact(Q.DECISION_DRIFT)], {d["id"] for d in rows})
+
+    def who_owns(self, target: str) -> ToolResult:
+        """Who to ask about a file or function: CODEOWNERS teams and people, authors, and reviewers."""
+        args = {"target": target}
+        ref = (target or "").strip()
+        rows = self._ro(Q.FIND_FILE, {"path": ref, "suffix": "/" + ref.lstrip("/")}) if "/" in ref or "." in ref.split("/")[-1] else []
+        fn = None
+        if not rows:
+            fn = self.resolve(ref)
+            if fn is None:
+                return ToolResult("who_owns", args, None, f"No file or function matching '{target}'.", error="not_found")
+            rows = [{"path": fn["file_path"]}]
+        path = rows[0]["path"]
+        owners = self._ro(Q.FILE_OWNERS, {"path": path})[0]
+        authors = self._ro(Q.FILE_AUTHORS, {"path": path})
+        reviewers = self._ro(Q.FILE_REVIEWERS, {"path": path})
+        fn_experts = self._ro(Q.FUNCTION_AUTHORS, {"id": fn["id"]}) if fn else []
+
+        people: Dict[str, Dict[str, Any]] = {}
+
+        def add(name: Optional[str], points: float, why: str, email: Optional[str] = None) -> None:
+            if not name:
+                return
+            p = people.setdefault(name, {"name": name, "email": email, "score": 0.0, "reasons": []})
+            p["score"] += points
+            p["email"] = p["email"] or email
+            if why not in p["reasons"]:
+                p["reasons"].append(why)
+
+        for t in owners["teams"]:
+            for m in t["members"]:
+                add(m, 3, f"in @{t['team']}, which owns {t['pattern']}")
+        for o in owners["people"]:
+            add(o["name"], 4, f"code owner of {o['pattern']}", o["email"])
+        for e in fn_experts:
+            add(e["name"], 1.5 * e["fn_commits"], f"changed {fn['name']} {e['fn_commits']}x", e["email"])
+        for a in authors:
+            add(a["name"], a["commits"], f"{a['commits']} commit(s) to the file", a["email"])
+        for r in reviewers:
+            add(r["name"], 1.5 * r["reviews"], "reviewed " + ", ".join(f"#{n}" for n in r["prs"]), r["email"])
+        ranked = sorted(people.values(), key=lambda p: -p["score"])
+        for p in ranked:
+            p["score"] = round(p["score"], 1)
+        data = {"file": path, "function": fn, "teams": owners["teams"], "owners": owners["people"],
+                "authors": authors, "reviewers": reviewers, "ask": ranked[:6]}
+        teams = ", ".join("@" + t["team"] for t in owners["teams"])
+        summary = (f"{path}: " + (f"owned by {teams}; " if teams else "no CODEOWNERS entry; ")
+                   + ("ask " + ", ".join(p["name"] for p in ranked[:3]) if ranked else "nobody on record"))
+        visited = {*(t["id"] for t in owners["teams"]), *(p["email"] for p in ranked if p["email"])}
+        if fn:
+            visited.add(fn["id"])
+        return ToolResult("who_owns", args, data, summary,
+                          [compact(Q.FILE_OWNERS), compact(Q.FILE_AUTHORS), compact(Q.FILE_REVIEWERS)]
+                          + ([compact(Q.FUNCTION_AUTHORS)] if fn else []), visited)
+
+    def search_knowledge(self, query: str, limit: int = 6) -> ToolResult:
+        """Full-text search over issues, pull requests, comments and decisions."""
+        words = [w for w in re.findall(r"[A-Za-z0-9_]+", query.lower()) if len(w) > 2 and w not in QUESTION_WORDS]
+        q = "|".join(dict.fromkeys(words))
+        rows: List[Dict[str, Any]] = []
+        queries = (Q.SEARCH_DECISIONS, Q.SEARCH_PULLS, Q.SEARCH_ISSUES, Q.SEARCH_COMMENTS)
+        if q:
+            for cypher in queries:
+                try:
+                    found = self._ro(cypher, {"q": q, "limit": limit})
+                except Exception:  # the index does not exist until knowledge has been loaded
+                    found = []
+                top = max((r["score"] for r in found), default=1.0) or 1.0
+                stems = {_stem(w) for w in words}
+                for r in found:
+                    text_stems = {_stem(w) for w in re.findall(r"[A-Za-z0-9_]+", f"{r['title']} {r['text']}".lower())}
+                    r["matched_words"] = sorted(stems & text_stems)
+                    # BM25 scores are not comparable across indexes; word coverage is.
+                    r["score"] = round(0.3 * r["score"] / top + 0.7 * len(r["matched_words"]) / max(len(stems), 1), 3)
+                    r["text"] = (r["text"] or "")[:600]
+                rows += found
+        rows.sort(key=lambda r: (-r["score"], -(r["at_ms"] or 0)))
+        visited = {r.get("item_id") or r["id"] for r in rows[: limit * 2]} | {r["id"] for r in rows[: limit * 2]}
+        return ToolResult("search_knowledge", {"query": query}, rows[: limit * 2],
+                          f"{len(rows)} matching issue(s), pull request(s), comment(s) and decision(s)"
+                          + (f"; best: {rows[0]['type']} #{rows[0]['number']} \"{rows[0]['title'][:50]}\"" if rows else ""),
+                          [compact(c) for c in queries], visited)
+
+    def knowledge_gaps(self, limit: int = 10) -> ToolResult:
+        rows = self._ro(Q.SINGLE_AUTHOR_FILES, {"limit": limit})
+        unowned = [r for r in rows if not r["owners"]]
+        return ToolResult("knowledge_gaps", {"limit": limit}, rows,
+                          f"{len(rows)} file(s) only one person has changed; {len(unowned)} of them have no code owner",
+                          [compact(Q.SINGLE_AUTHOR_FILES)])
+
+    def ownership(self) -> ToolResult:
+        rows = self._ro(Q.OWNERSHIP_MAP, {})
+        return ToolResult("ownership", {}, rows, f"{len(rows)} ownership rule(s)", [compact(Q.OWNERSHIP_MAP)])
+
     # ------------------------------------------------------------- internal
 
     def _ids(self, refs: List[str]) -> List[str]:
@@ -309,6 +476,15 @@ TOOL_SPECS: List[Dict[str, Any]] = [
     {"name": "risky_changes", "description": "Untested functions changed by the most recent commits, with who changed "
      "them. Good for 'it broke recently' bugs.",
      "parameters": {"commits": {"type": "integer", "description": "how many recent commits to look at"}}, "required": []},
+    {"name": "why_code", "description": "Why a function is the way it is: the pull requests that changed it, who "
+     "reviewed them, the issues they fixed, decisions that govern it (and whether code changed since), open issues "
+     "that mention it.",
+     "parameters": {"function": {"type": "string"}}, "required": ["function"]},
+    {"name": "who_owns", "description": "Who to ask about a file or function: CODEOWNERS teams, authors and reviewers.",
+     "parameters": {"target": {"type": "string", "description": "file path or function name"}}, "required": ["target"]},
+    {"name": "search_knowledge", "description": "Full-text search over issues, pull requests, review comments and "
+     "recorded decisions.",
+     "parameters": {"query": {"type": "string"}}, "required": ["query"]},
     {"name": "recall_past_investigations", "description": "Earlier bug investigations that involved these functions.",
      "parameters": {"functions": {"type": "array", "items": {"type": "string"}}}, "required": ["functions"]},
 ]
@@ -319,7 +495,11 @@ def run_tool(tools: GraphTools, name: str, args: Dict[str, Any], exclude: str = 
     try:
         if name == "search_code":
             return tools.search_code(str(args.get("query", "")))
-        if name in ("get_function", "find_experts", "blast_radius"):
+        if name == "search_knowledge":
+            return tools.search_knowledge(str(args.get("query", "")))
+        if name == "who_owns":
+            return tools.who_owns(str(args.get("target") or args.get("function") or ""))
+        if name in ("get_function", "find_experts", "blast_radius", "why_code"):
             return getattr(tools, name)(str(args.get("function", "")))
         if name in ("get_callers", "get_callees"):
             return getattr(tools, name)(str(args.get("function", "")), int(args.get("depth") or (2 if name == "get_callers" else 1)))

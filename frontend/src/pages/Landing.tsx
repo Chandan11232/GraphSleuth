@@ -21,20 +21,20 @@ const STEPS = [
   {
     icon: ScanSearch,
     title: 'Ingest',
-    body: 'tree-sitter parses Python, JavaScript, TypeScript, Go and Java into functions, classes, tests and call sites. Git history becomes Commit and Person nodes, linked to the exact functions each diff touched.',
-    detail: 'acme-shop: 23 functions, 24 calls, 4 tests, 9 commits, 4 people, in under a second.',
+    body: 'tree-sitter parses Python, JavaScript, TypeScript, Go and Java into functions, classes, tests and call sites. Git history becomes Commit and Person nodes, linked to the exact functions each diff touched. Issues, pull requests, reviews and CODEOWNERS join the same graph.',
+    detail: 'acme-shop: 23 functions, 24 calls, 4 tests, 9 commits, 9 pull requests, 4 teams, in under a second.',
   },
   {
     icon: Network,
     title: 'Investigate',
     body: 'From the bug report the agent walks the graph: stack frames, callers and callees up to three hops, covering tests, recent commits, PageRank. A local LLM can call the same tools for anything the sweep missed.',
-    detail: '20 steps for the demo bug, each one a Cypher query you can expand.',
+    detail: '22 steps for the demo bug, each one a Cypher query you can expand.',
   },
   {
     icon: Crosshair,
     title: 'Explain',
-    body: 'Suspects are ranked on six factors you can read. The evidence graph shows exactly the nodes and edges the agent visited, and the verdict comes with a patch, reviewers and blast radius.',
-    detail: 'Reviewers are the people whose commits touched the function.',
+    body: 'Suspects are ranked on six factors you can read. The verdict comes with a patch, blast radius, the pull requests and decisions that shaped the code, and who owns it.',
+    detail: 'acme-shop: PR #12 reversed a review decision from PR #6, approved by nobody in @payments.',
   },
   {
     icon: Brain,
@@ -80,6 +80,12 @@ const RELATIONSHIPS: [string, string, string][] = [
   ['BugReport', 'INVESTIGATED_IN', 'Investigation'],
   ['Investigation', 'SUSPECTS', 'Function'],
   ['Investigation', 'CONFIRMED', 'Function'],
+  ['PullRequest', 'INCLUDES', 'Commit'],
+  ['PullRequest', 'FIXES', 'Issue'],
+  ['Person', 'REVIEWED', 'PullRequest'],
+  ['Decision', 'DECIDED_IN', 'Comment'],
+  ['Team', 'OWNS', 'File'],
+  ['Person', 'MEMBER_OF', 'Team'],
 ]
 
 const LABEL_COLOR: Record<string, string> = {
@@ -96,7 +102,8 @@ const LABEL_COLOR: Record<string, string> = {
 const MCP_TOOLS = [
   'list_repositories', 'search_code', 'get_function', 'get_callers', 'get_callees', 'get_tests', 'recent_changes',
   'find_experts', 'blast_radius', 'call_path', 'hotspots', 'risky_changes', 'test_context',
-  'recall_past_investigations', 'investigate_bug', 'confirm_root_cause', 'run_cypher',
+  'recall_past_investigations', 'investigate_bug', 'confirm_root_cause', 'why_code', 'who_owns', 'search_knowledge',
+  'decisions', 'ask_company_brain', 'run_cypher',
 ]
 
 function SectionHead({ eyebrow, title, children }: { eyebrow: string; title: string; children?: React.ReactNode }) {
@@ -402,9 +409,9 @@ RETURN DISTINCT f.qualified_name, c.message, p.name`}
 
       {/* Graph model */}
       <section id="model" className="scroll-mt-20 mx-auto max-w-6xl space-y-10 px-5 py-20 sm:px-8 lg:py-28">
-        <SectionHead eyebrow="Graph model" title="Code, history and memory in one graph.">
-          Each repository gets its own FalkorDB graph. Investigations are stored in it too, linked to the functions they
-          suspected and confirmed, which is what lets the next investigation remember.
+        <SectionHead eyebrow="Graph model" title="Code, history, team knowledge and memory in one graph.">
+          Each repository gets its own FalkorDB graph. The issues, pull requests, reviews and decisions around the code
+          live in it too, and so do investigations, linked to the functions they suspected and confirmed.
         </SectionHead>
         <div className="grid grid-cols-1 gap-x-10 gap-y-3 overflow-x-auto rounded-xl border bg-card p-6 md:grid-cols-2">
           {RELATIONSHIPS.map(([a, r, b]) => <Pattern key={`${a}${r}${b}`} from={a} rel={r} to={b} />)}
@@ -413,6 +420,7 @@ RETURN DISTINCT f.qualified_name, c.message, p.name`}
           <span className="flex items-center gap-2"><GitCommitHorizontal className="h-4 w-4" /> Last 300 commits, mapped to function line spans</span>
           <span className="flex items-center gap-2"><ScanSearch className="h-4 w-4" /> Full-text index on function names and bodies</span>
           <span className="flex items-center gap-2"><Network className="h-4 w-4" /> PageRank over CALLS for hotspots</span>
+          <span className="flex items-center gap-2"><Brain className="h-4 w-4" /> Decisions flagged when the code they govern changes</span>
         </div>
       </section>
 
@@ -478,7 +486,7 @@ RETURN DISTINCT f.qualified_name, c.message, p.name`}
         <footer className="relative border-t border-white/10">
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-5 py-6 text-xs text-sidebar-muted sm:px-8">
             <p>Built for Graph Hacks 2026 · WeMakeDevs × FalkorDB</p>
-            <p>Tracks: Agents That Act on Connected Data · Agent Memory and Coordination</p>
+            <p>Tracks: Agents That Act on Connected Data · Agent Memory and Coordination · Company Brain</p>
             <p>MIT licensed</p>
           </div>
         </footer>

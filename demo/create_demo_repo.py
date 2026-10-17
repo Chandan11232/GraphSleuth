@@ -7,9 +7,16 @@ The history tells a story the agent can uncover from the graph:
     `find_order`, which returns None for unknown orders, and dropped the guard,
   * the refund tests only cover the happy path.
 
+It also writes the company knowledge around the code: a CODEOWNERS file (committed)
+and `.cd-knowledge.json`, an export of the team's tracker with issues, pull requests,
+reviews and comments. In it, the review of the original refund PR records a decision
+("refund code always loads orders with get_order"), and the later refactor reverses
+it with an approval from someone outside the payments team.
+
 Usage:  python demo/create_demo_repo.py [target_dir]
 All names, emails and data are fictional.
 """
+import json
 import os
 import shutil
 import subprocess
@@ -24,6 +31,18 @@ PEOPLE = {
     "dana": ("Dana Kim", "dana@acme-shop.example"),
     "lee": ("Lee Okafor", "lee@acme-shop.example"),
 }
+
+CODEOWNERS = """
+# Default owner for everything not listed below
+*                       @priya-raman
+
+/shop/payments/         @acme-shop/payments
+/shop/orders.py         @acme-shop/payments
+/shop/pricing.py        @acme-shop/storefront
+/shop/checkout.py       @acme-shop/storefront
+/shop/api/              @acme-shop/storefront
+/shop/notifications.py  @lee-okafor
+"""
 
 FILES_V1 = {
     "shop/__init__.py": "",
@@ -314,6 +333,109 @@ def commit(message, author, date, files):
     git("commit", "-q", "-m", message, author=author, date=date)
 
 
+# ------------------------------------------------------------------ tracker export
+
+LOGINS = {"priya": "priya-raman", "marco": "marco-silva", "dana": "dana-kim", "lee": "lee-okafor"}
+URL = "https://tracker.acme-shop.example/acme-shop/shop"
+
+
+def pr(number, title, author, merged_at, commit_subject, body, reviews):
+    return {"number": number, "title": title, "author": LOGINS[author], "state": "closed",
+            "url": f"{URL}/pull/{number}", "created_at": merged_at.replace("T18", "T09"), "merged_at": merged_at,
+            "body": body, "commits": [commit_subject],
+            "reviews": [{"author": LOGINS[a], "state": st, "body": b, "submitted_at": merged_at.replace("T18", "T16"),
+                         "url": f"{URL}/pull/{number}#review-{i}"} for i, (a, st, b) in enumerate(reviews)]}
+
+
+def issue(number, title, author, created_at, body, state="closed", closed_at=None, labels=()):
+    return {"number": number, "title": title, "author": author, "state": state, "url": f"{URL}/issues/{number}",
+            "created_at": created_at, "closed_at": closed_at, "body": body, "labels": list(labels)}
+
+
+def comment(cid, on, author, created_at, body, path=None):
+    return {"id": cid, "on": on, "author": LOGINS.get(author, author), "created_at": created_at, "body": body,
+            "url": f"{URL}/issues/{on}#comment-{cid}", "path": path}
+
+
+KNOWLEDGE = {
+    "people": [{"login": LOGINS[k], "name": n, "email": e} for k, (n, e) in PEOPLE.items()]
+    + [{"login": "sam-patel", "name": "Sam Patel", "email": "sam@acme-shop.example"}],
+    "teams": [
+        {"name": "payments", "members": ["priya-raman", "dana-kim"]},
+        {"name": "storefront", "members": ["marco-silva"]},
+        {"name": "platform", "members": ["lee-okafor"]},
+        {"name": "support", "members": ["sam-patel"]},
+    ],
+    "pulls": [
+        pr(1, "Initial store and order model", "priya", "2026-06-02T18:00:00Z", "Initial store and order model",
+           "In-memory store and the order model (`get_order`, `find_order`, `create_order`).",
+           [("marco", "APPROVED", "")]),
+        pr(2, "Add pricing with tax and discounts", "marco", "2026-06-10T18:00:00Z", "Add pricing with tax and discounts",
+           "Cart totals with 8% tax and the WELCOME10 code.", [("priya", "APPROVED", "")]),
+        pr(3, "Add inventory reservations", "marco", "2026-06-18T18:00:00Z", "Add inventory reservations",
+           "Reserve stock before charging; `restock_items` for returns.", [("priya", "APPROVED", "")]),
+        pr(5, "Payment gateway client", "priya", "2026-07-01T18:00:00Z", "Payment gateway client",
+           "Fake gateway with `charge_card` and `refund_card`.", [("dana", "APPROVED", "")]),
+        pr(6, "Refund processing with order validation", "priya", "2026-07-15T18:00:00Z",
+           "Refund processing with order validation",
+           "Fixes #4. Adds `process_refund` for full and partial refunds. Unknown orders: `get_order` raises "
+           "OrderNotFound, which `process_refund` turns into ok=False and the handler into a 404.",
+           [("dana", "APPROVED", "Looks good.")]),
+        pr(7, "Checkout flow and API handlers", "marco", "2026-08-03T18:00:00Z", "Checkout flow and API handlers",
+           "Checkout plus the request handlers for checkout, refunds and order status.", [("priya", "APPROVED", "")]),
+        pr(9, "Bulk discount code", "marco", "2026-09-12T18:00:00Z", "Bulk discount code",
+           "Closes #8. Adds the BULK code to `apply_discount`.", [("priya", "APPROVED", "")]),
+        pr(11, "Customer refund notifications", "lee", "2026-10-02T18:00:00Z", "Customer refund notifications",
+           "Part of #10: adds `notify_refund` and `send_email`. Wiring it into the refund flow is a follow-up for "
+           "the payments team.", [("dana", "APPROVED", "")]),
+        pr(12, "Refactor refund flow: notify customer, simplify order lookup", "dana", "2026-10-09T18:00:00Z",
+           "Refactor refund flow: notify customer, simplify order lookup",
+           "Fixes #10. Calls `notify_refund` after every refund, and simplifies the order lookup in "
+           "`process_refund` by switching to `find_order` (no try/except needed).",
+           [("lee", "APPROVED", "LGTM, notifications part looks right.")]),
+    ],
+    "issues": [
+        issue(4, "Support refunds (full and partial)", "sam-patel", "2026-06-28T09:00:00Z",
+              "Support needs to refund orders from the admin tool, fully or partially. Refunding an order id that "
+              "doesn't exist must return a clear 404, not a 500.", closed_at="2026-07-15T18:00:00Z",
+              labels=["payments"]),
+        issue(8, "Bulk discount for large orders", "sam-patel", "2026-08-20T09:00:00Z",
+              "Wholesale customers keep asking for a discount on big orders.", closed_at="2026-09-12T18:00:00Z",
+              labels=["pricing"]),
+        issue(10, "Email customers when a refund is issued", "sam-patel", "2026-09-20T09:00:00Z",
+              "Customers write in asking whether their refund went through. Send them an email.",
+              closed_at="2026-10-09T18:00:00Z", labels=["payments", "notifications"]),
+        issue(13, "Refunding a deleted order returns 500", "sam-patel", "2026-10-12T09:00:00Z",
+              "Support tried to refund order o-4471 after the order was removed. The admin tool shows a 500. "
+              "Traceback ends in `validate_refund_amount`: TypeError: 'NoneType' object is not subscriptable.",
+              state="open", labels=["payments", "bug"]),
+    ],
+    "comments": [
+        comment("c1", 6, "dana", "2026-07-15T12:10:00Z",
+                "Should we use `find_order` here instead of try/except around `get_order`? It's shorter.",
+                path="shop/payments/refunds.py"),
+        comment("c2", 6, "priya", "2026-07-15T12:40:00Z",
+                "No: `find_order` returns None and every caller then has to remember the check. Decision: refund "
+                "code always loads orders with `get_order`, so a missing order is an explicit OrderNotFound and "
+                "never None.", path="shop/payments/refunds.py"),
+        comment("c3", 6, "dana", "2026-07-15T13:05:00Z", "Makes sense, agreed."),
+        comment("c4", 8, "marco", "2026-08-25T10:00:00Z",
+                "We agreed to make BULK a flat $25 off orders over $200 rather than a percentage, so margins stay "
+                "predictable."),
+        comment("c5", 8, "priya", "2026-08-25T11:00:00Z", "Fine by me, a flat amount is easier to explain."),
+        comment("c6", 10, "lee", "2026-09-22T10:00:00Z",
+                "I'll add the email helpers; the payments team should call them from the refund flow."),
+        comment("c7", 13, "lee", "2026-10-12T11:30:00Z",
+                "Maybe related to #12? It touched `process_refund` last week."),
+    ],
+}
+
+
+def write_knowledge():
+    """The tracker export sits next to the code, like a CODEOWNERS file but not committed."""
+    (ROOT / ".cd-knowledge.json").write_text(json.dumps(KNOWLEDGE, indent=1))
+
+
 def main():
     if ROOT.exists():
         shutil.rmtree(ROOT)
@@ -324,7 +446,7 @@ def main():
         return {k: v for k, v in FILES_V1.items() if k in names}
 
     commit("Initial store and order model", "priya", "2026-06-02T10:00:00",
-           pick("shop/__init__.py", "shop/db.py", "shop/orders.py"))
+           {**pick("shop/__init__.py", "shop/db.py", "shop/orders.py"), ".github/CODEOWNERS": CODEOWNERS})
     commit("Add pricing with tax and discounts", "marco", "2026-06-10T14:20:00",
            {**pick("tests/__init__.py", "tests/test_pricing.py"),
             "shop/pricing.py": FILES_V1["shop/pricing.py"].replace(
@@ -343,6 +465,7 @@ def main():
            {"shop/notifications.py": NOTIFY})
     commit("Refactor refund flow: notify customer, simplify order lookup", "dana", "2026-10-09T17:25:00",
            {"shop/payments/refunds.py": REFUNDS_V2})
+    write_knowledge()
     print(f"Demo repository created at {ROOT}")
 
 

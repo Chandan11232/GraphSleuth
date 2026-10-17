@@ -185,13 +185,11 @@ RETURN f.id AS id, count(c2) AS touches, max(c2.timestamp) AS last_touch, newest
 # Who knows this code: authors of commits that touched the function or its file.
 # One row per name, since the same person often commits under more than one email.
 FIND_EXPERTS = """
-MATCH (f:Function {id: $id})
-OPTIONAL MATCH (p1:Person)-[:AUTHORED]->(:Commit)-[:TOUCHED]->(f)
-OPTIONAL MATCH (p2:Person)-[:AUTHORED]->(:Commit)-[:MODIFIES]->(:File {path: f.file_path})
-WITH collect(p1) AS fn_people, collect(p2) AS file_people
-UNWIND fn_people + file_people AS p
-WITH DISTINCT p, size([x IN fn_people WHERE x = p]) AS fn_commits, size([x IN file_people WHERE x = p]) AS file_commits
-WHERE p IS NOT NULL
+MATCH (file:File)-[:CONTAINS]->(f:Function {id: $id})
+MATCH (p:Person)-[:AUTHORED]->(c:Commit)-[:MODIFIES]->(file)
+WITH f, p, count(DISTINCT c) AS file_commits
+OPTIONAL MATCH (p)-[:AUTHORED]->(c2:Commit)-[:TOUCHED]->(f)
+WITH p, file_commits, count(DISTINCT c2) AS fn_commits
 WITH p.name AS name, collect(p.email) AS emails, toInteger(sum(fn_commits)) AS fn_commits,
      toInteger(sum(file_commits)) AS file_commits
 RETURN name, emails[0] AS email, fn_commits, file_commits
@@ -410,4 +408,367 @@ WHERE t.file_path ENDS WITH $ext
 RETURN t.name AS name, t.file_path AS file_path, t.code AS code
 ORDER BY t.file_path, t.name
 LIMIT 2
+"""
+
+# --------------------------------------------------------------------------
+# Company knowledge (issues, pull requests, reviews, discussions, owners)
+# --------------------------------------------------------------------------
+
+# GitHub logins are joined to git authors through the commit email.
+WRITE_KNOWLEDGE_PEOPLE = """
+UNWIND $rows AS row
+MERGE (p:Person {email: row.email})
+ON CREATE SET p.name = row.name
+SET p.login = row.login
+"""
+
+WRITE_TEAMS = """
+UNWIND $rows AS row
+MERGE (t:Team {name: row.name})
+SET t.id = 'team-' + row.name
+WITH t, row
+UNWIND row.members AS login
+MATCH (p:Person {login: login})
+MERGE (p)-[:MEMBER_OF]->(t)
+"""
+
+WRITE_ISSUES = """
+UNWIND $rows AS row
+MERGE (i:Issue {number: row.number})
+SET i.id = 'issue-' + toString(row.number), i.title = row.title, i.body = row.body, i.state = row.state,
+    i.url = row.url, i.created_at = row.created_at, i.created_ms = row.created_ms, i.closed_ms = row.closed_ms,
+    i.labels = row.labels
+WITH i, row WHERE row.author IS NOT NULL
+MATCH (p:Person {login: row.author})
+MERGE (p)-[:OPENED]->(i)
+"""
+
+WRITE_PULLS = """
+UNWIND $rows AS row
+MERGE (pr:PullRequest {number: row.number})
+SET pr.id = 'pr-' + toString(row.number), pr.title = row.title, pr.body = row.body, pr.state = row.state,
+    pr.url = row.url, pr.created_at = row.created_at, pr.created_ms = row.created_ms, pr.merged_ms = row.merged_ms
+WITH pr, row WHERE row.author IS NOT NULL
+MATCH (p:Person {login: row.author})
+MERGE (p)-[:OPENED]->(pr)
+"""
+
+WRITE_REVIEWS = """
+UNWIND $rows AS row
+MATCH (pr:PullRequest {number: row.number}), (p:Person {login: row.author})
+MERGE (p)-[r:REVIEWED]->(pr)
+SET r.state = row.state, r.at_ms = row.at_ms
+"""
+
+# Issue and PR numbers share one sequence on GitHub, so a comment's target is whichever exists.
+WRITE_COMMENTS = """
+UNWIND $rows AS row
+OPTIONAL MATCH (i:Issue {number: row.on})
+OPTIONAL MATCH (pr:PullRequest {number: row.on})
+WITH row, coalesce(i, pr) AS target
+WHERE target IS NOT NULL
+MERGE (c:Comment {id: row.id})
+SET c.body = row.body, c.url = row.url, c.created_at = row.created_at, c.created_ms = row.created_ms,
+    c.path = row.path
+MERGE (c)-[:ON]->(target)
+WITH c, row WHERE row.author IS NOT NULL
+MATCH (p:Person {login: row.author})
+MERGE (p)-[:WROTE]->(c)
+"""
+
+# Review comments left on a line of a file.
+WRITE_COMMENT_FILES = """
+UNWIND $rows AS row
+MATCH (c:Comment {id: row.id}), (f:File {path: row.path})
+MERGE (c)-[:ABOUT]->(f)
+"""
+
+WRITE_FIXES = """
+UNWIND $rows AS row
+MATCH (pr:PullRequest {number: row.pr}), (i:Issue {number: row.issue})
+MERGE (pr)-[:FIXES]->(i)
+"""
+
+
+def write_references(label: str, key: str) -> str:
+    return f"""
+UNWIND $rows AS row
+MATCH (s:{label} {{{key}: row.key}})
+OPTIONAL MATCH (i:Issue {{number: row.number}})
+OPTIONAL MATCH (pr:PullRequest {{number: row.number}})
+WITH s, coalesce(i, pr) AS t
+WHERE t IS NOT NULL
+MERGE (s)-[:REFERENCES]->(t)
+"""
+
+
+def write_mentions(label: str, key: str) -> str:
+    return f"""
+UNWIND $rows AS row
+MATCH (s:{label} {{{key}: row.key}})
+MATCH (f:Function {{name: row.name}})
+WHERE f.in_test_file = false
+MERGE (s)-[:MENTIONS]->(f)
+"""
+
+
+def write_decisions(label: str, key: str) -> str:
+    return f"""
+UNWIND $rows AS row
+MATCH (s:{label} {{{key}: row.key}})
+MERGE (d:Decision {{id: row.id}})
+SET d.text = row.text, d.url = row.url, d.at_ms = row.at_ms
+MERGE (d)-[:DECIDED_IN]->(s)
+WITH d, row WHERE row.author IS NOT NULL
+MATCH (p:Person {{login: row.author}})
+MERGE (p)-[:DECIDED]->(d)
+"""
+
+
+# A decision is about the functions its own sentence names.
+WRITE_DECISION_ABOUT = """
+UNWIND $rows AS row
+MATCH (d:Decision {id: row.id})
+MATCH (f:Function {name: row.name})
+WHERE f.in_test_file = false
+MERGE (d)-[:ABOUT]->(f)
+"""
+
+# By sha (merge, squash or rebase commit) or, for knowledge files, by commit subject.
+WRITE_PR_COMMITS = """
+UNWIND $rows AS row
+MATCH (pr:PullRequest {number: row.number})
+MATCH (c:Commit)
+WHERE (row.sha IS NOT NULL AND c.sha STARTS WITH row.sha) OR (row.subject IS NOT NULL AND c.message = row.subject)
+MERGE (pr)-[:INCLUDES]->(c)
+RETURN count(*) AS links
+"""
+
+WRITE_TEAM_OWNS = """
+UNWIND $rows AS row
+MATCH (f:File {path: row.path})
+MERGE (t:Team {name: row.team})
+SET t.id = 'team-' + row.team
+MERGE (t)-[o:OWNS]->(f)
+SET o.pattern = row.pattern
+"""
+
+WRITE_PERSON_OWNS = """
+UNWIND $rows AS row
+MATCH (f:File {path: row.path})
+MERGE (p:Person {login: row.login})
+ON CREATE SET p.name = row.login, p.email = row.login + '@users.noreply.github.com'
+MERGE (p)-[o:OWNS]->(f)
+SET o.pattern = row.pattern
+"""
+
+WRITE_EMAIL_OWNS = """
+UNWIND $rows AS row
+MATCH (f:File {path: row.path}), (p:Person {email: row.email})
+MERGE (p)-[o:OWNS]->(f)
+SET o.pattern = row.pattern
+"""
+
+MARK_KNOWLEDGE_SYNC = """
+MATCH (r:Repository)
+SET r.knowledge_source = $source, r.knowledge_synced_at = $at
+"""
+
+KNOWLEDGE_STATUS = """
+MATCH (r:Repository)
+OPTIONAL MATCH (i:Issue)
+WITH r, count(i) AS issues
+OPTIONAL MATCH (p:PullRequest)
+WITH r, issues, count(p) AS pull_requests
+OPTIONAL MATCH (d:Decision)
+WITH r, issues, pull_requests, count(d) AS decisions
+OPTIONAL MATCH (t:Team)
+RETURN r.knowledge_source AS source, r.knowledge_synced_at AS synced_at, issues, pull_requests, decisions,
+       count(t) AS teams
+"""
+
+# Why is this function the way it is: each commit that changed it, newest first, with its pull request.
+FUNCTION_HISTORY = """
+MATCH (f:Function {id: $id})<-[:TOUCHED]-(c:Commit)
+OPTIONAL MATCH (author:Person)-[:AUTHORED]->(c)
+OPTIONAL MATCH (pr:PullRequest)-[:INCLUDES]->(c)
+WITH c, author, pr ORDER BY c.timestamp DESC
+RETURN c.sha AS sha, c.message AS message, c.timestamp AS timestamp, author.name AS author,
+       author.email AS email, pr.number AS pr
+LIMIT $limit
+"""
+
+# The conversation behind a pull request: who opened and reviewed it, and the issues it fixed.
+PR_CONTEXT = """
+UNWIND $numbers AS n
+MATCH (pr:PullRequest {number: n})
+OPTIONAL MATCH (opener:Person)-[:OPENED]->(pr)
+OPTIONAL MATCH (rev:Person)-[r:REVIEWED]->(pr)
+WITH pr, opener, collect(DISTINCT CASE WHEN rev IS NULL THEN NULL ELSE {name: rev.name, state: r.state} END) AS reviews
+OPTIONAL MATCH (pr)-[:FIXES]->(i:Issue)
+OPTIONAL MATCH (reporter:Person)-[:OPENED]->(i)
+WITH pr, opener, reviews,
+     collect(DISTINCT CASE WHEN i IS NULL THEN NULL ELSE
+       {id: i.id, number: i.number, title: i.title, url: i.url, state: i.state, opened_by: reporter.name} END) AS fixes
+OPTIONAL MATCH (cm:Comment)-[:ON]->(pr)
+RETURN pr.id AS id, pr.number AS number, pr.title AS title, pr.url AS url, pr.state AS state,
+       pr.merged_ms AS merged_ms, opener.name AS opened_by, reviews, fixes, count(cm) AS comments
+"""
+
+# Issues, pull requests and comments that name the function.
+FUNCTION_DISCUSSIONS = """
+MATCH (f:Function {id: $id})<-[:MENTIONS]-(s)
+WHERE s:Issue OR s:PullRequest OR s:Comment
+OPTIONAL MATCH (s)-[:ON]->(parent)
+WITH coalesce(parent, s) AS item, count(*) AS hits
+OPTIONAL MATCH (who:Person)-[:OPENED]->(item)
+RETURN labels(item)[0] AS type, item.id AS id, item.number AS number, item.title AS title, item.url AS url,
+       item.state AS state, who.name AS opened_by, hits
+ORDER BY number DESC
+LIMIT 10
+"""
+
+# Every decision, where it was made, and the code it governs: functions its sentence names, and
+# functions changed by the pull request it was made in (or that fixed the issue it was made in).
+DECISIONS = """
+MATCH (d:Decision)-[:DECIDED_IN]->(src)
+OPTIONAL MATCH (src)-[:ON]->(parent)
+WITH d, src, coalesce(parent, src) AS item
+OPTIONAL MATCH (who:Person)-[:DECIDED]->(d)
+RETURN d.id AS id, d.text AS text, d.url AS url, d.at_ms AS at_ms, who.name AS author,
+       labels(item)[0] AS item_type, item.id AS item_id, item.number AS item_number, item.title AS item_title,
+       labels(src)[0] AS source_type,
+       [(d)-[:ABOUT]->(f:Function) | {id: f.id, name: f.qualified_name}] AS about,
+       [(item)-[:INCLUDES]->(:Commit)-[:TOUCHED]->(f:Function) | {id: f.id, name: f.qualified_name}]
+       + [(item)<-[:FIXES]-(:PullRequest)-[:INCLUDES]->(:Commit)-[:TOUCHED]->(f:Function)
+          | {id: f.id, name: f.qualified_name}] AS changed
+ORDER BY at_ms DESC
+LIMIT $limit
+"""
+
+# Knowledge drift: code a decision governs that has been changed since, by commits from outside
+# the pull request that made the decision.
+DECISION_DRIFT = """
+MATCH (d:Decision)
+OPTIONAL MATCH (d)-[:DECIDED_IN]->(pr1:PullRequest)
+OPTIONAL MATCH (d)-[:DECIDED_IN]->(:Comment)-[:ON]->(pr2:PullRequest)
+OPTIONAL MATCH (d)-[:DECIDED_IN]->(:Issue)<-[:FIXES]-(pr3:PullRequest)
+WITH d, coalesce(pr1, pr2, pr3) AS pr
+WHERE pr IS NOT NULL
+MATCH (pr)-[:INCLUDES]->(:Commit)-[:TOUCHED]->(f:Function)<-[:TOUCHED]-(later:Commit)
+WHERE later.timestamp > coalesce(pr.merged_ms, d.at_ms, 0) AND NOT (pr)-[:INCLUDES]->(later)
+OPTIONAL MATCH (author:Person)-[:AUTHORED]->(later)
+OPTIONAL MATCH (lpr:PullRequest)-[:INCLUDES]->(later)
+OPTIONAL MATCH (rev:Person)-[:REVIEWED]->(lpr)
+WITH d, f, later, author, lpr, collect(DISTINCT rev.name) AS reviewers
+RETURN d.id AS id, f.id AS fn_id, f.qualified_name AS function, later.sha AS sha, later.message AS message,
+       later.timestamp AS timestamp, author.name AS author, lpr.number AS pr, reviewers
+ORDER BY timestamp DESC
+"""
+
+# Who owns a file: CODEOWNERS teams (with members) and people.
+FILE_OWNERS = """
+MATCH (file:File {path: $path})
+OPTIONAL MATCH (t:Team)-[o:OWNS]->(file)
+OPTIONAL MATCH (m:Person)-[:MEMBER_OF]->(t)
+WITH file, t, o, collect(DISTINCT m.name) AS members
+WITH file, collect(DISTINCT CASE WHEN t IS NULL THEN NULL ELSE
+       {id: t.id, team: t.name, pattern: o.pattern, members: members} END) AS teams
+OPTIONAL MATCH (p:Person)-[po:OWNS]->(file)
+RETURN teams, collect(DISTINCT CASE WHEN p IS NULL THEN NULL ELSE
+       {name: p.name, email: p.email, pattern: po.pattern} END) AS people
+"""
+
+FILE_AUTHORS = """
+MATCH (file:File {path: $path})<-[:MODIFIES]-(c:Commit)<-[:AUTHORED]-(p:Person)
+RETURN p.name AS name, p.email AS email, count(c) AS commits, max(c.timestamp) AS last_commit
+ORDER BY commits DESC, last_commit DESC
+LIMIT 6
+"""
+
+FUNCTION_AUTHORS = """
+MATCH (f:Function {id: $id})<-[:TOUCHED]-(c:Commit)<-[:AUTHORED]-(p:Person)
+RETURN p.name AS name, p.email AS email, count(c) AS fn_commits
+ORDER BY fn_commits DESC
+"""
+
+# People who reviewed pull requests that changed the file: they know it without having written it.
+FILE_REVIEWERS = """
+MATCH (file:File {path: $path})<-[:MODIFIES]-(:Commit)<-[:INCLUDES]-(pr:PullRequest)<-[r:REVIEWED]-(p:Person)
+RETURN p.name AS name, p.email AS email, count(DISTINCT pr) AS reviews, collect(DISTINCT pr.number)[0..5] AS prs
+ORDER BY reviews DESC
+LIMIT 6
+"""
+
+FIND_FILE = """
+MATCH (f:File)
+WHERE f.path = $path OR f.path ENDS WITH $suffix
+RETURN f.path AS path
+ORDER BY size(f.path)
+LIMIT 1
+"""
+
+OWNERSHIP_MAP = """
+MATCH (o)-[r:OWNS]->(f:File)
+OPTIONAL MATCH (m:Person)-[:MEMBER_OF]->(o)
+WITH o, r.pattern AS pattern, count(DISTINCT f) AS files, collect(DISTINCT m.name) AS members
+RETURN labels(o)[0] AS kind, o.id AS id, coalesce(o.name, o.login) AS owner, pattern, files, members
+ORDER BY files DESC, owner
+"""
+
+# Knowledge held by one person: non-test files only one person has ever changed, most-called first.
+SINGLE_AUTHOR_FILES = """
+MATCH (f:File)
+WHERE f.is_test = false
+MATCH (p:Person)-[:AUTHORED]->(:Commit)-[:MODIFIES]->(f)
+WITH f, collect(DISTINCT p.name) AS authors
+WHERE size(authors) = 1
+OPTIONAL MATCH (o)-[:OWNS]->(f)
+OPTIONAL MATCH (f)-[:CONTAINS]->(:Function)<-[:CALLS]-(caller:Function)
+RETURN f.path AS path, authors[0] AS only_author, count(DISTINCT o) AS owners, count(DISTINCT caller) AS callers
+ORDER BY owners, callers DESC, path
+LIMIT $limit
+"""
+
+SEARCH_ISSUES = """
+CALL db.idx.fulltext.queryNodes('Issue', $q) YIELD node, score
+OPTIONAL MATCH (who:Person)-[:OPENED]->(node)
+RETURN 'Issue' AS type, node.id AS id, node.number AS number, node.title AS title, node.body AS text,
+       node.url AS url, node.state AS state, who.name AS author, node.created_ms AS at_ms, score
+ORDER BY score DESC
+LIMIT $limit
+"""
+
+SEARCH_PULLS = """
+CALL db.idx.fulltext.queryNodes('PullRequest', $q) YIELD node, score
+OPTIONAL MATCH (who:Person)-[:OPENED]->(node)
+RETURN 'PullRequest' AS type, node.id AS id, node.number AS number, node.title AS title, node.body AS text,
+       node.url AS url, node.state AS state, who.name AS author, coalesce(node.merged_ms, node.created_ms) AS at_ms,
+       score
+ORDER BY score DESC
+LIMIT $limit
+"""
+
+SEARCH_COMMENTS = """
+CALL db.idx.fulltext.queryNodes('Comment', $q) YIELD node, score
+MATCH (node)-[:ON]->(item)
+OPTIONAL MATCH (who:Person)-[:WROTE]->(node)
+RETURN 'Comment' AS type, node.id AS id, item.number AS number, item.title AS title, node.body AS text,
+       node.url AS url, item.id AS item_id, labels(item)[0] AS item_type, who.name AS author,
+       node.created_ms AS at_ms, score
+ORDER BY score DESC
+LIMIT $limit
+"""
+
+SEARCH_DECISIONS = """
+CALL db.idx.fulltext.queryNodes('Decision', $q) YIELD node, score
+MATCH (node)-[:DECIDED_IN]->(src)
+OPTIONAL MATCH (src)-[:ON]->(parent)
+WITH node, score, coalesce(parent, src) AS item
+OPTIONAL MATCH (who:Person)-[:DECIDED]->(node)
+RETURN 'Decision' AS type, node.id AS id, item.number AS number, item.title AS title, node.text AS text,
+       node.url AS url, item.id AS item_id, labels(item)[0] AS item_type, who.name AS author,
+       node.at_ms AS at_ms, score
+ORDER BY score DESC
+LIMIT $limit
 """

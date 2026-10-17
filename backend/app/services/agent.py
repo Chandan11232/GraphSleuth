@@ -8,7 +8,9 @@
 5. Rank suspects with an explainable score.
 6. If an LLM is available, let it drive further graph tools and pick the root
    cause; otherwise the top-ranked suspect is the verdict.
-7. Write a patch from the real source, and save the investigation to memory.
+7. Trace the root cause through the pull requests, reviews, issues and decisions
+   that shaped it, and find who owns it.
+8. Write a patch from the real source, and save the investigation to memory.
 
 Every step is emitted as an event carrying the Cypher that produced it.
 """
@@ -557,6 +559,14 @@ class Investigation:
                          "reviewed with the right scope.", blast.summary, tool=blast, data=blast.data)
         yield self._step("find_experts", "Found who knows this code (authors of commits that touched it) to suggest "
                          "reviewers.", experts.summary, tool=experts, data=experts.data)
+        history = self.tools.why_code(self.verdict["id"])
+        yield self._step("code_history", "Followed the root cause back through the pull requests that changed it, "
+                         "their reviews and the issues they fixed, and checked recorded decisions about this code "
+                         "for later changes that may have broken them.", history.summary, tool=history,
+                         data=history.data)
+        owners = self.tools.who_owns(self.verdict["id"])
+        yield self._step("who_owns", "Looked up who owns the file (CODEOWNERS teams) and who reviews changes to it, "
+                         "so the fix reaches the right people.", owners.summary, tool=owners, data=owners.data)
 
         tests = [t for s in self.suspects if s["id"] == self.verdict["id"] for t in s["tests"]]
         self.fix = {
@@ -569,6 +579,8 @@ class Investigation:
             "reviewers": experts.data or [],
             "blast_radius": blast.data,
             "tests": tests,
+            "history": history.data,
+            "owners": owners.data,
         }
         fix_model = None
         if self.use_llm and self.llm.enabled:

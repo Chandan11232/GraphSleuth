@@ -95,6 +95,8 @@ export interface Fix {
   reviewers: { name: string; email: string; fn_commits: number; file_commits: number }[]
   blast_radius: { affected_functions: number; affected_files: number; covering_tests: string[]; sample_callers: string[] }
   tests: string[]
+  history?: CodeHistory
+  owners?: Ownership | null
 }
 
 export interface InvestigationResult {
@@ -193,4 +195,89 @@ export interface Health {
   status: string
   falkordb: boolean
   llm: { enabled: boolean; host: string; models: string[]; agent_model: string | null }
+}
+
+// ---------------------------------------------------------------- company brain
+
+export interface PullRequestRef {
+  id: string
+  number: number
+  title: string
+  url: string
+  state: string
+  merged_ms: number | null
+  opened_by: string | null
+  reviews: { name: string; state: string }[]
+  fixes: { id: string; number: number; title: string; url: string; state: string; opened_by: string | null }[]
+  comments: number
+}
+
+export interface Drift {
+  sha: string
+  message: string
+  timestamp: number
+  author: string
+  pr: number | null
+  reviewers: string[]
+  functions: string[]
+}
+
+export interface Decision {
+  id: string
+  text: string
+  url: string
+  at_ms: number | null
+  author: string | null
+  item_type: 'Issue' | 'PullRequest'
+  item_id: string
+  item_number: number
+  item_title: string
+  functions: { id: string; name: string }[]
+  drift: Drift[]
+}
+
+export interface CodeHistory {
+  function: { id: string; name: string; file_path: string }
+  changes: { sha: string; message: string; timestamp: number; author: string; email: string; pull_request: PullRequestRef | null }[]
+  decisions: Decision[]
+  discussions: { type: string; id: string; number: number; title: string; url: string; state: string; opened_by: string | null }[]
+}
+
+export interface Ownership {
+  file: string
+  teams: { id: string; team: string; pattern: string; members: string[] }[]
+  owners: { name: string; email: string; pattern: string }[]
+  ask: { name: string; email: string | null; score: number; reasons: string[] }[]
+}
+
+export interface BrainSource {
+  n: number
+  key: string
+  type: 'Issue' | 'PullRequest' | 'Comment' | 'Decision' | 'Team'
+  number?: number
+  title?: string
+  url?: string
+  author?: string | null
+  text?: string
+  why: string
+}
+
+export interface BrainAnswer {
+  question: string
+  answer: string
+  summary: string | null
+  mode: 'graph' | 'graph+llm'
+  model: string | null
+  subjects: { functions: { id: string; name: string; file_path: string }[]; path: string | null }
+  sources: BrainSource[]
+  steps: { tool: string; args: Record<string, any>; summary: string; query: string }[]
+  graph: GraphResponse
+}
+
+export interface BrainOverview {
+  status: { source: string | null; synced_at: string | null; issues: number; pull_requests: number; decisions: number; teams: number }
+  ownership: { kind: string; id: string | null; owner: string; pattern: string; files: number; members: string[] }[]
+  decisions: Decision[]
+  knowledge_gaps: { path: string; only_author: string; owners: number; callers: number }[]
+  summaries: { decisions: string; knowledge_gaps: string }
 }

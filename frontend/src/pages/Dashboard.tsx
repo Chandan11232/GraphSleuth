@@ -8,6 +8,7 @@ import {
   FlaskConical,
   Github,
   History,
+  Library,
   Loader2,
   Plus,
   ShieldAlert,
@@ -294,6 +295,17 @@ export function Dashboard() {
                   }}
                 >
                   <Bug className="h-4 w-4 mr-1" /> Investigate a bug
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={repo.status !== "ready"}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate(`/brain?repo=${repo.id}`);
+                  }}
+                >
+                  <Library className="h-4 w-4 mr-1" /> Ask
                 </Button>
                 <Button
                   variant="ghost"

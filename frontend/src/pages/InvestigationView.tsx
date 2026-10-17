@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle, ArrowLeft, Bot, Brain, CheckCircle, ChevronDown, ChevronRight, FileCode, GitBranch, GitCommit,
-  FlaskConical, Loader2, Network, Search, ShieldCheck, Sparkles, TestTube, Users, Wrench,
+  FlaskConical, GitMerge, Loader2, Network, Search, ShieldCheck, Sparkles, TestTube, Users, Wrench,
 } from 'lucide-react'
 import { useEvidenceGraph, useInvestigation } from '../hooks'
 import { api, errorMessage, type AnalysisStep, type GraphNode, type Suspect } from '../services/api'
@@ -12,12 +12,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/Tabs'
 import { EvidenceGraph } from '../components/investigation/EvidenceGraph'
 import { SuggestTestDialog, type TestTarget } from '../components/SuggestTestDialog'
+import { CodeHistoryView, OwnersView } from '../components/knowledge/CodeHistory'
 
 const STEP_ICONS: Record<string, any> = {
   parse_bug_report: Search, match_stack_frames: Search, match_identifiers: Search, search_code: Search,
   get_callers: GitBranch, get_callees: GitBranch, get_tests: TestTube, recent_changes: GitCommit,
   graph_algorithms: Network, recall_past_investigations: Brain, rank_suspects: AlertTriangle,
   verdict: ShieldCheck, blast_radius: Network, find_experts: Users, generate_fix: Wrench, save_memory: Brain,
+  code_history: GitMerge, who_owns: Users,
 }
 
 const FACTOR_LABEL: Record<string, string> = {
@@ -298,8 +300,24 @@ export function InvestigationView() {
                     <pre className="font-mono text-xs bg-muted rounded-lg p-4 overflow-x-auto">{fix.target.code}</pre>
                   </CardContent>
                 </Card>
+                {fix.history && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base flex items-center gap-2"><GitMerge className="h-4 w-4" /> How this code got here</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <CodeHistoryView history={fix.history} owners={fix.owners} />
+                    </CardContent>
+                  </Card>
+                )}
               </div>
               <div className="space-y-4">
+                {fix.owners && (
+                  <Card>
+                    <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Users className="h-4 w-4" /> Who owns it · {fix.owners.file}</CardTitle></CardHeader>
+                    <CardContent><OwnersView owners={fix.owners} /></CardContent>
+                  </Card>
+                )}
                 <Card>
                   <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Users className="h-4 w-4" /> Suggested reviewers</CardTitle></CardHeader>
                   <CardContent className="space-y-2 text-sm">

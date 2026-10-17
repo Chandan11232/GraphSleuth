@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
-import { Bug, Database, LayoutDashboard, Moon, Sparkles } from 'lucide-react'
+import { Bug, Database, LayoutDashboard, Library, Moon, Sparkles } from 'lucide-react'
 import { api, type Health } from '../services/api'
 import { ErrorBoundary } from './ErrorBoundary'
 import { useTheme } from '../hooks'
@@ -50,6 +50,9 @@ export function Layout() {
           </NavLink>
           <NavLink to="/investigate" className={navClass}>
             <Bug className="h-4 w-4" /> New investigation
+          </NavLink>
+          <NavLink to="/brain" className={navClass}>
+            <Library className="h-4 w-4" /> Company brain
           </NavLink>
         </nav>
         <div className="px-3 pb-3">

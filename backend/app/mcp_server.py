@@ -18,6 +18,7 @@ from app.core.falkordb import get_falkordb
 from app.services import cypher_queries as Q
 from app.services import store
 from app.services.agent import Investigation, new_id
+from app.services.brain import Brain
 from app.services.graph_tools import GraphTools, ToolResult
 
 # stdout carries the MCP protocol, so every log line must go to stderr.
@@ -28,9 +29,10 @@ structlog.configure(logger_factory=structlog.PrintLoggerFactory(file=sys.stderr)
 mcp = FastMCP(
     "codebase-detective",
     instructions=(
-        "Tools over a FalkorDB code graph (functions, CALLS, tests, commits, authors) plus a memory of past bug "
-        "investigations. Start with list_repositories, then search_code / investigate_bug. Pass the repository "
-        "name or id to every tool. Each result includes the Cypher that produced it."
+        "Tools over a FalkorDB code graph (functions, CALLS, tests, commits, authors), the team knowledge around it "
+        "(issues, pull requests, reviews, decisions, CODEOWNERS) and a memory of past bug investigations. Start with "
+        "list_repositories, then search_code / investigate_bug, or ask_company_brain / why_code / who_owns. Pass "
+        "the repository name or id to every tool. Each result includes the Cypher that produced it."
     ),
 )
 
@@ -137,6 +139,42 @@ def recall_past_investigations(repository: str, functions: Optional[List[str]] =
 
 
 @mcp.tool()
+def why_code(repository: str, function: str) -> str:
+    """Why a function is the way it is: the commits and pull requests that changed it, who opened and
+    reviewed them, the issues they fixed, recorded decisions that govern it (with later changes that may
+    break them), and open issues that mention it."""
+    return _out(GraphTools(_repo(repository)["graph_name"]).why_code(function))
+
+
+@mcp.tool()
+def who_owns(repository: str, target: str) -> str:
+    """Who to ask about a file path or function: CODEOWNERS teams and members, authors and reviewers,
+    ranked with the reason for each person."""
+    return _out(GraphTools(_repo(repository)["graph_name"]).who_owns(target))
+
+
+@mcp.tool()
+def search_knowledge(repository: str, query: str) -> str:
+    """Full-text search over the team's issues, pull requests, review comments and recorded decisions."""
+    return _out(GraphTools(_repo(repository)["graph_name"]).search_knowledge(query))
+
+
+@mcp.tool()
+def decisions(repository: str) -> str:
+    """Decisions recorded in issues, pull requests and reviews, the code each one governs, and any later
+    commits that changed that code (knowledge drift)."""
+    return _out(GraphTools(_repo(repository)["graph_name"]).decisions())
+
+
+@mcp.tool()
+async def ask_company_brain(repository: str, question: str) -> str:
+    """Answer a question about the codebase and the team around it ("why does X do Y", "who should review
+    Z", "what did we decide about W"), citing the issue, pull request, comment or decision behind each claim."""
+    result = await Brain(_repo(repository)["graph_name"]).ask(question, use_llm=False)
+    return json.dumps({k: result[k] for k in ("answer", "sources", "steps")}, default=str, indent=1)
+
+
+@mcp.tool()
 async def investigate_bug(repository: str, title: str, description: str) -> str:
     """Run the full graph investigation on a bug report (graph-only, no LLM) and save it to shared memory.
     Returns ranked suspects with score breakdowns, the verdict, and the reasoning steps."""
@@ -173,9 +211,11 @@ def confirm_root_cause(repository: str, investigation_id: str, function: str, no
 @mcp.tool()
 def run_cypher(repository: str, query: str) -> str:
     """Run a read-only Cypher query against the repository's code graph (GRAPH.RO_QUERY).
-    Labels: Function, Class, File, Test, Commit, Person, BugReport, Investigation.
+    Labels: Function, Class, File, Test, Commit, Person, BugReport, Investigation, Team, Issue, PullRequest,
+    Comment, Decision.
     Edges: CALLS, CONTAINS, HAS_METHOD, IMPORTS, TESTS, MODIFIES, TOUCHED, AUTHORED, MENTIONS,
-    INVESTIGATED_IN, SUSPECTS, CONFIRMED."""
+    INVESTIGATED_IN, SUSPECTS, CONFIRMED, MEMBER_OF, OWNS, OPENED, REVIEWED, WROTE, ON, ABOUT, FIXES,
+    REFERENCES, INCLUDES, DECIDED_IN, DECIDED."""
     rows = get_falkordb().ro(_repo(repository)["graph_name"], query)
     return json.dumps(rows[:100], default=str, indent=1)
 

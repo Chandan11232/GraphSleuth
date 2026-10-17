@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.routes import graph, investigations, repos
+from app.api.routes import brain, graph, investigations, repos
 from app.core.config import settings
 from app.core.falkordb import get_falkordb
 from app.services.llm import get_llm
@@ -9,6 +9,7 @@ api_router = APIRouter()
 api_router.include_router(repos.router, prefix="/repos", tags=["repositories"])
 api_router.include_router(investigations.router, prefix="/investigations", tags=["investigations"])
 api_router.include_router(graph.router, prefix="/graph", tags=["graph"])
+api_router.include_router(brain.router, prefix="/brain", tags=["company brain"])
 
 
 @api_router.get("/health")

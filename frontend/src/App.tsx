@@ -4,6 +4,7 @@ import { Landing } from './pages/Landing'
 import { Dashboard } from './pages/Dashboard'
 import { NewInvestigation } from './pages/NewInvestigation'
 import { InvestigationView } from './pages/InvestigationView'
+import { Brain } from './pages/Brain'
 
 export default function App() {
   return (
@@ -13,6 +14,7 @@ export default function App() {
         <Route path="/repos" element={<Dashboard />} />
         <Route path="/investigate" element={<NewInvestigation />} />
         <Route path="/investigations/:investigationId" element={<InvestigationView />} />
+        <Route path="/brain" element={<Brain />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

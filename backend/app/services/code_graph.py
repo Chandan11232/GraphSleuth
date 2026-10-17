@@ -19,6 +19,7 @@ from app.core.config import settings
 from app.core.falkordb import get_falkordb
 from app.models.graph_models import INDEX_QUERIES
 from app.services import cypher_queries as Q
+from app.services.knowledge import ingest_knowledge
 from app.services.parsing import (
     SELF_RECEIVERS,
     FunctionDef,
@@ -63,11 +64,13 @@ class CommitInfo:
 
 
 class CodeGraphBuilder:
-    def __init__(self, graph_name: str, repo_id: str, repo_name: str = "", repo_url: str = ""):
+    def __init__(self, graph_name: str, repo_id: str, repo_name: str = "", repo_url: str = "",
+                 token: Optional[str] = None):
         self.graph_name = graph_name
         self.repo_id = repo_id
         self.repo_name = repo_name
         self.repo_url = repo_url
+        self.token = token
         self.db = get_falkordb()
 
     # ------------------------------------------------------------ top level
@@ -107,6 +110,12 @@ class CodeGraphBuilder:
         touched = self._write_history(commits, files)
         stats["commit_function_links"] = touched
         stats["people"] = len({c.email for c in commits})
+
+        notify("knowledge", stats)
+        knowledge = ingest_knowledge(self.graph_name, repo_path, self.repo_url, self.token,
+                                     read_merge_commits(repo_path))
+        stats.update({f"knowledge_{k}" if k in ("issues", "comments", "reviews", "teams") else k: v
+                      for k, v in knowledge.items()})
         return dict(stats)
 
     # -------------------------------------------------------------- parsing
@@ -367,6 +376,27 @@ def read_git_history(repo_path: str, limit: int) -> List[CommitInfo]:
     return commits
 
 
+def read_merge_commits(repo_path: str, limit: int = 150) -> Dict[str, List[str]]:
+    """Merge commit sha -> the commits its pull request brought in (first parent..second parent)."""
+    if not os.path.isdir(os.path.join(repo_path, ".git")):
+        return {}
+    try:
+        out = subprocess.run(["git", "-C", repo_path, "log", "--merges", f"-n{limit}", "--format=%H %P"],
+                             capture_output=True, text=True, timeout=60, check=True).stdout
+        merges: Dict[str, List[str]] = {}
+        for line in out.splitlines():
+            parts = line.split()
+            if len(parts) < 3:
+                continue
+            shas = subprocess.run(["git", "-C", repo_path, "rev-list", "--no-merges", f"{parts[1]}..{parts[2]}"],
+                                  capture_output=True, text=True, timeout=30).stdout.split()
+            merges[parts[0]] = shas[:100]
+        return merges
+    except (subprocess.SubprocessError, OSError) as e:
+        logger.warning("Reading merge commits failed", error=str(e))
+        return {}
+
+
 def _parse_patch(patch: str, info: CommitInfo) -> None:
     current: Optional[str] = None
     for line in patch.splitlines():
@@ -431,7 +461,7 @@ def ingest_source(
     progress: Optional[ProgressFn] = None,
 ) -> Dict[str, int]:
     """Ingest a remote https URL or (if allowed) a local directory."""
-    builder = CodeGraphBuilder(graph_name, repo_id, repo_name, source)
+    builder = CodeGraphBuilder(graph_name, repo_id, repo_name, source, token or settings.GITHUB_TOKEN)
     if os.path.isdir(source):
         if not settings.ALLOW_LOCAL_REPOS:
             raise ValueError("Local repositories are disabled on this server")
