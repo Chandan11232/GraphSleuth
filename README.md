@@ -258,7 +258,7 @@ ollama pull qwen2.5-coder:7b              # optional; without it investigations 
 docker compose up --build
 ```
 
-- App: http://localhost:3000
+- App: http://localhost:3000 (landing page with a replay of a real investigation; the app itself is at `/repos`)
 - API docs: http://localhost:8000/docs
 - FalkorDB Browser: http://localhost:3001 (connect to `falkordb:6379` from inside the stack, or `localhost:6379`)
 
@@ -274,7 +274,7 @@ python3.11 -m venv venv && source venv/bin/activate
 pip install -r requirements-dev.txt
 cp ../.env.example .env
 uvicorn app.main:app --reload            # http://localhost:8000
-pytest                                   # 14 tests; integration tests need FalkorDB on :6379
+pytest                                   # 22 tests; integration tests need FalkorDB on :6379
 
 cd ../frontend
 npm install
@@ -357,8 +357,10 @@ backend/app/
   api/routes/                 repos, investigations (+SSE), graph
   mcp_server.py               MCP server
 frontend/src/
-  pages/                      Dashboard, NewInvestigation, InvestigationView
+  pages/                      Landing, Dashboard, NewInvestigation, InvestigationView
+  components/landing/         InvestigationReplay (animated replay of a real demo run)
   components/investigation/   EvidenceGraph (React Flow + dagre)
+  hooks/useTheme.ts           light/dark theme (saved choice, else the system setting)
   components/SuggestTestDialog.tsx   suggested-test dialog (Dashboard and Fix tab)
 demo/create_demo_repo.py      synthetic demo repository with history
 ```
@@ -380,25 +382,32 @@ Only public repositories, or the synthetic `demo/acme-shop` repo (all names and 
 
 ## AI assistance disclosure
 
-<!-- DRAFT written with Claude from our sessions. Check every line and reword it in your own voice before submitting. -->
-
 This project was built with heavy use of an AI coding assistant, **Claude Code**. To be clear about who did what:
-
-**Written by Claude Code:** most of the code, including the ingestion pipeline, the agent, the graph tools, the MCP
-server, the API, the frontend, the demo repository and the tests, and most of the Cypher queries.
 
 **Done by me (Chandan):**
 - Chose the project idea and the features, and directed the build and every change.
+- **Chose FalkorDB as the core of the project** and worked with it hands-on: ran it with Docker, explored the code
+  graph in the FalkorDB Browser, and used the Browser to write, run and check Cypher queries before they went into
+  the app.
+- The five recent query features on the dashboard's **Risky recent changes** card:
+  1. **Risky-changes query:** built it step by step in the FalkorDB Browser, checking the results at each step, and
+     found the missing `LIMIT` that produced 25 rows instead of 4.
+  2. **Commit-window filter:** wrote the 3/5/7/10-commit filter on the card.
+  3. **How many functions depend on it:** extended the query with `OPTIONAL MATCH (caller:Function)-[:CALLS]->(f)` and
+     `count(DISTINCT caller)` so each change shows its caller count and the most-depended-on changes come first. Ran
+     and checked it in the FalkorDB Browser and wrote the test assertion for it.
+  4. **Giving the solution:** designed the **Investigate** button so a risky change opens a new investigation already
+     filled in for it, which leads to the root cause, a patch, reviewers and the blast radius.
+  5. **Suggest test:** designed what a suggested test should be built from in the graph (the function's callers,
+     callees and the nearest existing tests) and checked the drafts it produced on the demo repo.
 - Tested it on the demo repo and on my own repository, and found real bugs that were then fixed: a blank page, a
   PageRank error on my todolist repo, and the app using 98% of my machine's RAM.
-- Built the risky-changes query step by step in the FalkorDB Browser, checking the results at each step, and found the
-  missing `LIMIT` that produced 25 rows instead of 4. Claude wrote the queries.
-- Wrote the commit-window filter (3/5/7/10 commits) on the Risky recent changes card.
-- Extended the risky-changes query to count callers (Claude helped fill in the `CALLS`/`count` parts; I ran and checked
-  it in the FalkorDB Browser) and wrote the test assertion for it.
 - Ran the setup with Docker and Ollama, and reviewed the results of each feature.
 
-Claude Code wrote the Investigate and Suggest test buttons, the test writer and the UI redesign at my request.
+**Written by Claude Code:** most of the code, including the ingestion pipeline, the agent, the graph tools, the MCP
+server, the API, the frontend (the landing page, the light/dark theme and the UI redesign), the demo repository and
+the tests, most of the Cypher queries, and the code for the Investigate and Suggest test buttons and the test writer,
+from my designs.
 
 ## License
 
