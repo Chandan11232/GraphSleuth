@@ -3,7 +3,9 @@ import { useNavigate } from "react-router-dom";
 import {
   Bug,
   CheckCircle,
+  Crosshair,
   Flame,
+  FlaskConical,
   Github,
   History,
   Loader2,
@@ -13,7 +15,15 @@ import {
   XCircle,
 } from "lucide-react";
 import { useRepoInsights, useRepositories, useRepositoryStats } from "../hooks";
-import { errorMessage, type Repository } from "../services/api";
+import {
+  errorMessage,
+  type Repository,
+  type RiskyChange,
+} from "../services/api";
+import {
+  SuggestTestDialog,
+  type TestTarget,
+} from "../components/SuggestTestDialog";
 import {
   Dialog,
   DialogContent,
@@ -36,24 +46,114 @@ function StatusBadge({ repo }: { repo: Repository }) {
   switch (repo.status) {
     case "ready":
       return (
-        <Badge className="bg-green-100 text-green-800">
+        <Badge className="bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300">
           <CheckCircle className="h-3 w-3 mr-1" /> Ready
         </Badge>
       );
     case "error":
       return (
-        <Badge className="bg-red-100 text-red-800">
+        <Badge className="bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300">
           <XCircle className="h-3 w-3 mr-1" /> Error
         </Badge>
       );
     default:
       return (
-        <Badge className="bg-blue-100 text-blue-800">
+        <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300">
           <Loader2 className="h-3 w-3 mr-1 animate-spin" />{" "}
           {repo.progress || repo.status}
         </Badge>
       );
   }
+}
+
+type RiskLevel = "high" | "medium" | "low";
+
+const RISK_BAR: Record<RiskLevel, string> = {
+  high: "bg-risk-high",
+  medium: "bg-risk-medium",
+  low: "bg-risk-low",
+};
+
+const RISK_LABEL: Record<RiskLevel, string> = {
+  high: "2+ callers",
+  medium: "1 caller",
+  low: "entry point",
+};
+
+const riskLevel = (callers: number): RiskLevel =>
+  callers >= 2 ? "high" : callers === 1 ? "medium" : "low";
+
+const shortDate = (ms: number) =>
+  new Date(ms).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+
+/** A bug report the agent can start from: names the function so the graph search finds it. */
+function investigatePrefill(r: RiskyChange) {
+  const callers =
+    r.callers === 1 ? "1 function calls it" : `${r.callers} functions call it`;
+  return {
+    title: `Review recent change to ${r.function}`,
+    description:
+      `${r.function} in ${r.file} changed recently and no test covers it.\n` +
+      `Changed by ${r.changed_by.join(", ")}: "${r.commits[0]}".\n` +
+      `${callers}, so a defect here would reach them too.\n\n` +
+      `Check ${r.function} for a defect introduced by this change. ` +
+      `Add any symptom, error message or stack trace you have seen.`,
+  };
+}
+
+function RiskyRow({
+  change: r,
+  onInvestigate,
+  onSuggestTest,
+}: {
+  change: RiskyChange;
+  onInvestigate: () => void;
+  onSuggestTest: () => void;
+}) {
+  const level = riskLevel(r.callers);
+  return (
+    <li className="flex gap-3 py-3 first:pt-0 last:pb-0">
+      <span
+        className={`w-1 shrink-0 rounded-full ${RISK_BAR[level]}`}
+        aria-hidden="true"
+      />
+      <div className="flex-1 min-w-0 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0 flex-1 basis-64">
+          <div className="flex items-center gap-2 flex-wrap">
+            <code className="font-mono text-sm font-medium break-all">
+              {r.function}
+            </code>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {r.callers} {r.callers === 1 ? "caller" : "callers"}
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5 truncate">
+            {r.file} · {r.changed_by.join(", ")} ·{" "}
+            <span className="tabular-nums">{shortDate(r.last_changed)}</span>
+          </p>
+          <p
+            className="text-xs text-muted-foreground truncate"
+            title={r.commits.join("\n")}
+          >
+            “{r.commits[0]}”
+            {r.commits.length > 1 && ` and ${r.commits.length - 1} more`}
+          </p>
+        </div>
+        <div className="flex gap-1.5 shrink-0">
+          <Button size="sm" variant="outline" className="h-8" onClick={onInvestigate}>
+            <Crosshair className="h-3.5 w-3.5 mr-1.5" /> Investigate
+          </Button>
+          <Button size="sm" variant="outline" className="h-8" onClick={onSuggestTest}>
+            <FlaskConical className="h-3.5 w-3.5 mr-1.5" /> Suggest test
+          </Button>
+        </div>
+      </div>
+    </li>
+  );
 }
 
 function Stat({ value, label }: { value: number | undefined; label: string }) {
@@ -81,6 +181,7 @@ export function Dashboard() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [commitLimit, setCommitLimit] = useState<number>(5);
+  const [testTarget, setTestTarget] = useState<TestTarget | null>(null);
 
   const selected =
     repositories.find((r) => r.id === selectedId) ||
@@ -128,10 +229,10 @@ export function Dashboard() {
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl">
+    <div className="px-6 py-6 lg:px-8 space-y-8 max-w-7xl">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold">Repositories</h1>
+          <h1 className="text-2xl font-semibold">Repositories</h1>
           <p className="text-muted-foreground text-sm">
             Each repository becomes its own FalkorDB graph of functions, calls,
             tests, commits and people.
@@ -235,168 +336,218 @@ export function Dashboard() {
       </div>
 
       {selected?.status === "ready" && (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">
-                Graph contents · {selected.name}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-sm space-y-3">
-              {stats ? (
-                <>
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
-                      Nodes ({stats.total_nodes})
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {Object.entries(stats.nodes).map(([k, v]) => (
-                        <Badge key={k} variant="secondary">
-                          {k} {v}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
-                      Edges ({stats.total_edges})
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {Object.entries(stats.edges).map(([k, v]) => (
-                        <Badge key={k} variant="outline">
-                          {k} {v}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              )}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Flame className="h-4 w-4 text-orange-500" /> Hotspots
-                (PageRank)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {hotspots.map((h) => (
-                <div
-                  key={h.id}
-                  className="flex items-center justify-between text-sm gap-2"
-                >
-                  <div className="min-w-0">
-                    <p className="font-mono text-xs truncate">{h.name}</p>
-                    <p className="text-[11px] text-muted-foreground truncate">
-                      {h.file_path}
-                    </p>
-                  </div>
-                  <Badge
-                    variant={h.tests ? "secondary" : "outline"}
-                    className={h.tests ? "" : "text-amber-700 border-amber-300"}
-                  >
-                    {h.tests ? `${h.tests} tests` : "untested"}
-                  </Badge>
-                </div>
-              ))}
-              {!hotspots.length && (
-                <p className="text-sm text-muted-foreground">
-                  No call graph yet.
-                </p>
-              )}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
+        <section className="space-y-4" aria-labelledby="selected-repo">
+          <div className="flex items-end justify-between gap-4 flex-wrap">
+            <div>
+              <p className="eyebrow">Selected repository</p>
+              <h2 id="selected-repo" className="text-xl font-semibold">
+                {selected.name}
+              </h2>
+            </div>
+            <p className="text-sm text-muted-foreground tabular-nums">
+              {selected.stats.functions ?? 0} functions ·{" "}
+              {selected.stats.tests ?? 0} tests ·{" "}
+              {selected.stats.people ?? 0} people
+            </p>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-3 items-start">
+            <Card className="lg:col-span-2">
+              <CardHeader className="pb-3 space-y-2">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <ShieldAlert className="h-4 w-4 text-amber-600" /> Risky
+                  <ShieldAlert className="h-4 w-4 text-risk-medium" /> Risky
                   recent changes
                 </CardTitle>
-                <select
-                  value={commitLimit}
-                  onChange={(e) => setCommitLimit(Number(e.target.value))}
-                  className="text-xs bg-background border rounded px-1.5 py-0.5 text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                >
-                  <option value={3}>3</option>
-                  <option value={5}>5</option>
-                  <option value={7}>7</option>
-                  <option value={10}>10</option>
-                </select>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Untested functions changed in the last {commitLimit} commits
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {riskyChanges.map((r) => (
-                <div key={r.id} className="text-sm">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="font-mono text-xs truncate">{r.function}</p>
-                    <span className="text-[11px] text-muted-foreground shrink-0">
-                      {r.changed_by.join(", ")} · {r.callers}{" "}
-                      {r.callers === 1 ? "caller" : "callers"}
-                    </span>
-                  </div>
-                  <p
-                    className="text-[11px] text-muted-foreground truncate"
-                    title={r.commits.join("\n")}
+                <p className="text-sm text-muted-foreground flex items-center gap-1.5 flex-wrap">
+                  Untested functions changed in the last
+                  <select
+                    id="commit-window"
+                    aria-label="Commits to look back"
+                    value={commitLimit}
+                    onChange={(e) => setCommitLimit(Number(e.target.value))}
+                    className="text-sm font-medium bg-background border border-input rounded-md px-1.5 py-0.5 text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                   >
-                    {r.file} · “{r.commits[0]}”
-                  </p>
-                </div>
-              ))}
-              {!riskyChanges.length && (
-                <p className="text-sm text-muted-foreground">
-                  No untested recent changes.
+                    <option value={3}>3</option>
+                    <option value={5}>5</option>
+                    <option value={7}>7</option>
+                    <option value={10}>10</option>
+                  </select>
+                  commits, most-called first.
                 </p>
-              )}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center gap-2">
-                <History className="h-4 w-4" /> Agent memory
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {investigations.map((inv) => (
-                <button
-                  key={inv.id}
-                  onClick={() => navigate(`/investigations/${inv.id}`)}
-                  className="w-full text-left p-2 rounded-md hover:bg-muted/60 border border-border"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium truncate">{inv.title}</p>
-                    <Badge
-                      variant={
-                        inv.status === "confirmed" ? "default" : "secondary"
-                      }
-                      className="shrink-0"
-                    >
-                      {inv.status}
-                    </Badge>
-                  </div>
-                  {inv.confirmed.length > 0 && (
-                    <p className="text-[11px] text-green-700 mt-0.5">
-                      root cause: {inv.confirmed.join(", ")}
+                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                  {(["high", "medium", "low"] as const).map((level) => (
+                    <span key={level} className="flex items-center gap-1.5">
+                      <span
+                        className={`h-2.5 w-1 rounded-full ${RISK_BAR[level]}`}
+                      />
+                      {RISK_LABEL[level]}
+                    </span>
+                  ))}
+                </div>
+              </CardHeader>
+              <CardContent>
+                {riskyChanges.length ? (
+                  <ul className="divide-y">
+                    {riskyChanges.map((r) => (
+                      <RiskyRow
+                        key={r.id}
+                        change={r}
+                        onInvestigate={() =>
+                          navigate(`/investigate?repo=${selected.id}`, {
+                            state: { prefill: investigatePrefill(r) },
+                          })
+                        }
+                        onSuggestTest={() =>
+                          setTestTarget({
+                            repoId: selected.id,
+                            functionId: r.id,
+                            name: r.function,
+                          })
+                        }
+                      />
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground py-6 text-center">
+                    No untested changes in the last {commitLimit} commits.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
+            <div className="space-y-4">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Flame className="h-4 w-4 text-risk-high" /> Hotspots
+                    <span className="font-normal text-muted-foreground">
+                      PageRank over calls
+                    </span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ol className="space-y-2">
+                    {hotspots.map((h, i) => (
+                      <li
+                        key={h.id}
+                        className="flex items-center justify-between text-sm gap-2"
+                      >
+                        <span className="text-xs text-muted-foreground tabular-nums w-4">
+                          {i + 1}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-mono text-xs truncate">{h.name}</p>
+                          <p className="text-[11px] text-muted-foreground truncate">
+                            {h.file_path}
+                          </p>
+                        </div>
+                        <Badge
+                          variant={h.tests ? "secondary" : "outline"}
+                          className={
+                            h.tests ? "" : "text-amber-800 border-amber-300 dark:text-amber-300 dark:border-amber-500/40"
+                          }
+                        >
+                          {h.tests ? `${h.tests} tests` : "untested"}
+                        </Badge>
+                      </li>
+                    ))}
+                  </ol>
+                  {!hotspots.length && (
+                    <p className="text-sm text-muted-foreground">
+                      No call graph yet.
                     </p>
                   )}
-                </button>
-              ))}
-              {!investigations.length && (
-                <p className="text-sm text-muted-foreground">
-                  No investigations yet. They are stored in the graph and
-                  recalled by later ones.
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <History className="h-4 w-4 text-primary" /> Agent memory
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {investigations.map((inv) => (
+                    <button
+                      key={inv.id}
+                      onClick={() => navigate(`/investigations/${inv.id}`)}
+                      className="w-full text-left p-2 rounded-md hover:bg-accent border border-border transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-medium truncate">
+                          {inv.title}
+                        </p>
+                        <Badge
+                          variant={
+                            inv.status === "confirmed" ? "default" : "secondary"
+                          }
+                          className="shrink-0"
+                        >
+                          {inv.status}
+                        </Badge>
+                      </div>
+                      {inv.confirmed.length > 0 && (
+                        <p className="text-[11px] text-primary mt-0.5">
+                          root cause: {inv.confirmed.join(", ")}
+                        </p>
+                      )}
+                    </button>
+                  ))}
+                  {!investigations.length && (
+                    <p className="text-sm text-muted-foreground">
+                      No investigations yet. They are stored in the graph and
+                      recalled by later ones.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Graph contents</CardTitle>
+                </CardHeader>
+                <CardContent className="text-sm space-y-3">
+                  {stats ? (
+                    <>
+                      <div>
+                        <p className="eyebrow mb-1.5">
+                          Nodes ({stats.total_nodes})
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {Object.entries(stats.nodes).map(([k, v]) => (
+                            <Badge key={k} variant="secondary">
+                              {k} {v}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="eyebrow mb-1.5">
+                          Edges ({stats.total_edges})
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {Object.entries(stats.edges).map(([k, v]) => (
+                            <Badge key={k} variant="outline">
+                              {k} {v}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </section>
       )}
+
+      <SuggestTestDialog
+        target={testTarget}
+        onClose={() => setTestTarget(null)}
+      />
 
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
         <DialogContent className="max-w-md">

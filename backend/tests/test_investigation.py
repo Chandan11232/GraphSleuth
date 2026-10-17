@@ -70,6 +70,37 @@ def test_risky_changes(graph):
     assert not older & {"process_refund", "apply_discount", "cart_total"}
 
 
+def test_test_context(graph):
+    from app.services.graph_tools import GraphTools
+
+    ctx = GraphTools(graph[0]).test_context("update_stock").data
+    assert {c["name"] for c in ctx["callers"]} == {"reserve_items", "restock_items"}
+    assert "_PRODUCTS = {" in ctx["module_code"]  # module state the test has to read
+    # No test calls update_stock, but one exercises a function two calls away.
+    assert ctx["examples_are_nearby"]
+    assert ctx["example_tests"][0]["file_path"] == "tests/test_refunds.py"
+    assert "def test_" in ctx["example_tests"][0]["code"]
+
+
+async def test_suggest_test_without_a_model(graph):
+    from app.services import test_writer
+
+    out = await test_writer.suggest_test(graph[0], "send_email")
+    assert out["test_path"] == "tests/test_notifications.py"
+    assert out["framework"] == "pytest"
+    assert out["context"]["callers"] == [{"name": "notify_refund", "file_path": "shop/notifications.py"}]
+    assert out["code"] == "" and "No local model" in out["error"]
+    with pytest.raises(test_writer.FunctionNotFound):
+        await test_writer.suggest_test(graph[0], "no_such_function")
+
+
+def test_parse_test_reply():
+    from app.services.test_writer import parse_reply
+
+    reply = "Here it is:\n```python\nimport pytest\n\ndef test_x():\n    assert 1\nCovers: normal case\n```\nCovers: normal case"
+    assert parse_reply(reply) == {"code": "import pytest\n\ndef test_x():\n    assert 1", "covers": "normal case"}
+
+
 async def _run(graph_name, title, description):
     from app.services.agent import Investigation, new_id
 
@@ -122,6 +153,10 @@ def test_api_flow(demo_repo):
         evidence = client.get(f"/api/v1/graph/investigation/{inv['id']}").json()
         assert {"BugReport", "Function", "Commit"} <= {n["type"] for n in evidence["nodes"]}
         assert any(e["type"] == "CALLS" for e in evidence["edges"])
+        risky = client.get(f"/api/v1/graph/{repo['id']}/risky-changes", params={"commits": 3}).json()
+        suggestion = client.post(f"/api/v1/graph/{repo['id']}/function/{risky[0]['id']}/suggest-test").json()
+        assert suggestion["function"]["id"] == risky[0]["id"] and suggestion["context"]["cypher"]
+        assert client.post(f"/api/v1/graph/{repo['id']}/function/ffffffffffffffff/suggest-test").status_code == 404
         client.delete(f"/api/v1/repos/{repo['id']}")
 
 

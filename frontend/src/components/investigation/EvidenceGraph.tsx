@@ -109,7 +109,7 @@ export function EvidenceGraph({ graph, onSelect }: { graph: GraphResponse; onSel
           minZoom={0.2}
           proOptions={{ hideAttribution: true }}
         >
-          <Background gap={16} color="#e5e7eb" />
+          <Background gap={16} color="hsl(var(--border))" />
           <Controls showInteractive={false} />
         </ReactFlow>
       </div>

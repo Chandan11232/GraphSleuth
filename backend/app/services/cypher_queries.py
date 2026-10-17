@@ -16,7 +16,8 @@ SET r.name = $name, r.url = $url, r.ingested_at = timestamp()
 WRITE_FILES = """
 MATCH (r:Repository {id: $repo_id})
 UNWIND $rows AS row
-CREATE (f:File {path: row.path, language: row.language, loc: row.loc, is_test: row.is_test})
+CREATE (f:File {path: row.path, language: row.language, loc: row.loc, is_test: row.is_test,
+                module_code: row.module_code})
 CREATE (r)-[:CONTAINS]->(f)
 """
 
@@ -373,4 +374,37 @@ MATCH (a)-[r]->(b)
 WHERE (a.id IN $ids OR a.sha IN $ids OR a.email IN $ids)
   AND (b.id IN $ids OR b.sha IN $ids OR b.email IN $ids)
 RETURN a, r, b
+"""
+
+# Test writing: the function, what calls it (how it is used) and what it calls (what to set up or fake).
+TEST_CONTEXT = """
+MATCH (file:File)-[:CONTAINS]->(f:Function {id: $id})
+OPTIONAL MATCH (caller:Function)-[:CALLS]->(f)
+WITH file, f, collect(DISTINCT caller) AS callers
+OPTIONAL MATCH (f)-[:CALLS]->(callee:Function)
+WITH file, f, callers, collect(DISTINCT callee) AS callees
+RETURN f.id AS id, f.qualified_name AS name, f.file_path AS file_path, f.start_line AS start_line,
+       f.code AS code, file.module_code AS module_code, size(callers) AS caller_count,
+       [c IN callers | {name: c.qualified_name, file_path: c.file_path, code: c.code}][..3] AS callers,
+       [c IN callees | {name: c.qualified_name, file_path: c.file_path, code: c.code}][..4] AS callees
+"""
+
+# Existing tests that exercise the function's neighbourhood: the closest examples of how this
+# repo sets up data and asserts, so a new test can follow the same style.
+NEARBY_TESTS = """
+MATCH (f:Function {id: $id})
+MATCH (t:Test)-[:TESTS]->(:Function)-[:CALLS*1..2]-(f)
+WITH t, count(*) AS links
+RETURN t.name AS name, t.file_path AS file_path, t.code AS code
+ORDER BY links DESC, t.name
+LIMIT 2
+"""
+
+# Fallback when nothing nearby is tested: any test written in the same language.
+ANY_TESTS = """
+MATCH (t:Test)
+WHERE t.file_path ENDS WITH $ext
+RETURN t.name AS name, t.file_path AS file_path, t.code AS code
+ORDER BY t.file_path, t.name
+LIMIT 2
 """

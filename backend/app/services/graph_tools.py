@@ -6,6 +6,7 @@ and the graph keys it visited (used to draw the evidence graph).
 """
 import re
 from dataclasses import dataclass, field
+from pathlib import PurePosixPath
 from typing import Any, Dict, List, Optional, Set
 
 from app.core.falkordb import get_falkordb
@@ -232,6 +233,25 @@ class GraphTools:
             summary += ": " + ", ".join(f"{r['function']} ({', '.join(r['changed_by'])})" for r in rows[:5])
         return ToolResult("risky_changes", {"commits": commits}, rows, summary,
                           [compact(Q.RISKY_CHANGES)], {r["id"] for r in rows})
+
+    def test_context(self, function: str) -> ToolResult:
+        """Everything needed to write a test for one function: its code, its callers and
+        callees, and the nearest existing tests to copy the style of."""
+        args = {"function": function}
+        fn = self._need(function, "test_context", args)
+        if isinstance(fn, ToolResult):
+            return fn
+        row = self._ro(Q.TEST_CONTEXT, {"id": fn["id"]})[0]
+        cypher = [compact(Q.TEST_CONTEXT), compact(Q.NEARBY_TESTS)]
+        row["example_tests"] = self._ro(Q.NEARBY_TESTS, {"id": fn["id"]})
+        row["examples_are_nearby"] = bool(row["example_tests"])
+        if not row["example_tests"]:
+            row["example_tests"] = self._ro(Q.ANY_TESTS, {"ext": PurePosixPath(row["file_path"]).suffix})
+            cypher.append(compact(Q.ANY_TESTS))
+        summary = (f"{row['name']}: {row['caller_count']} caller(s), {len(row['callees'])} callee(s), "
+                   f"{len(row['example_tests'])} example test(s)"
+                   + ("" if row["examples_are_nearby"] or not row["example_tests"] else " from elsewhere in the repo"))
+        return ToolResult("test_context", args, row, summary, cypher, {row["id"]})
 
     def recall_past_investigations(self, functions: Optional[List[str]] = None, text: str = "",
                                    exclude: str = "") -> ToolResult:

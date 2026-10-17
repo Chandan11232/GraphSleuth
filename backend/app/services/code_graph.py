@@ -163,7 +163,8 @@ class CodeGraphBuilder:
             "id": self.repo_id, "name": self.repo_name, "url": self.repo_url,
         })
         self._batched(Q.WRITE_FILES, [
-            {"path": pf.path, "language": pf.language, "loc": pf.loc, "is_test": any(f.is_test for f in pf.functions)}
+            {"path": pf.path, "language": pf.language, "loc": pf.loc, "is_test": any(f.is_test for f in pf.functions),
+             "module_code": pf.module_code}
             for pf in files
         ], repo_id=self.repo_id)
         self._batched(Q.WRITE_CLASSES, [

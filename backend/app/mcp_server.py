@@ -117,9 +117,17 @@ def hotspots(repository: str, limit: int = 10) -> str:
 
 @mcp.tool()
 def risky_changes(repository: str, commits: int = 10) -> str:
-    """Untested functions changed by the last `commits` commits, with who changed them and the commit
-    messages. Use it to review recent risky changes or when a bug appeared recently."""
+    """Untested functions changed by the last `commits` commits, with who changed them, the commit
+    messages and how many functions call them (most-called first). Use it to review recent risky
+    changes or when a bug appeared recently."""
     return _out(GraphTools(_repo(repository)["graph_name"]).risky_changes(commits))
+
+
+@mcp.tool()
+def test_context(repository: str, function: str) -> str:
+    """Everything needed to write a unit test for `function`: its source, how its callers use it,
+    what it calls, and the nearest existing tests in the repo to copy the style of."""
+    return _out(GraphTools(_repo(repository)["graph_name"]).test_context(function))
 
 
 @mcp.tool()

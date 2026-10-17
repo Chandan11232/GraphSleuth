@@ -104,3 +104,10 @@ def test_anonymous_js_callbacks_become_functions():
     assert {(e["src"], e["dst"], e["resolution"]) for e in edges} >= {
         (load.id, submit.id, "callback"), (submit.id, click.id, "callback")}
     assert "append" in body_tokens_for(submit).split()
+
+
+def test_module_code_keeps_what_is_outside_functions():
+    pf = parse_file("shop/payments.py", PY)
+    assert pf.module_code.startswith("from shop.orders import load_order")
+    assert "class PaymentService:" in pf.module_code
+    assert "load_order(order_id)" not in pf.module_code

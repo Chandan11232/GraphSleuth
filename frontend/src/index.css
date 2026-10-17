@@ -3,49 +3,70 @@
 @tailwind utilities;
 
 @layer base {
+  /* Cool paper page, ink sidebar, teal for the graph's own actions, amber-to-red for risk. */
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 210 25% 97%;
+    --foreground: 222 32% 13%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 222 32% 13%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --popover-foreground: 222 32% 13%;
+    --primary: 176 70% 28%;
+    --primary-foreground: 170 40% 98%;
+    --secondary: 210 22% 93%;
+    --secondary-foreground: 222 30% 18%;
+    --muted: 210 22% 94%;
+    --muted-foreground: 218 13% 42%;
+    --accent: 176 35% 92%;
+    --accent-foreground: 176 70% 20%;
+    --destructive: 0 72% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 22% 88%;
+    --input: 214 22% 84%;
+    --ring: 176 70% 32%;
     --radius: 0.5rem;
+
+    --sidebar: 222 34% 12%;
+    --sidebar-foreground: 210 30% 92%;
+    --sidebar-muted: 218 16% 62%;
+    --sidebar-active: 176 55% 22%;
+
+    --risk-high: 8 78% 52%;
+    --risk-medium: 35 92% 50%;
+    --risk-low: 214 16% 72%;
   }
 
+  /* Dark: deep ink page, cards a step lighter, sidebar a step darker; teal and risk colours lifted for contrast. */
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    color-scheme: dark;
+    --background: 222 30% 8%;
+    --foreground: 210 25% 92%;
+    --card: 222 26% 11%;
+    --card-foreground: 210 25% 92%;
+    --popover: 222 26% 11%;
+    --popover-foreground: 210 25% 92%;
+    --primary: 174 62% 40%;
+    --primary-foreground: 176 60% 8%;
+    --secondary: 220 20% 18%;
+    --secondary-foreground: 210 25% 90%;
+    --muted: 220 20% 15%;
+    --muted-foreground: 216 14% 64%;
+    --accent: 176 30% 17%;
+    --accent-foreground: 172 55% 78%;
+    --destructive: 0 70% 58%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 18% 20%;
+    --input: 220 18% 26%;
+    --ring: 174 62% 45%;
+
+    --sidebar: 224 34% 6%;
+    --sidebar-foreground: 210 30% 92%;
+    --sidebar-muted: 218 14% 60%;
+    --sidebar-active: 176 50% 20%;
+
+    --risk-high: 8 80% 60%;
+    --risk-medium: 38 92% 56%;
+    --risk-low: 216 12% 42%;
   }
 }
 
@@ -54,18 +75,47 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+  h1, h2, h3 {
+    text-wrap: balance;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.eyebrow {
+  @apply text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground;
+}
+
 .react-flow__node-default {
-  @apply bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-md;
+  @apply bg-card border border-border rounded-lg shadow-md;
 }
 
 .react-flow__edge-path {
-  @apply stroke-gray-400 dark:stroke-gray-500;
+  @apply stroke-muted-foreground;
 }
 
 .react-flow__handle {
-  @apply bg-primary border-2 border-white dark:border-gray-800;
+  @apply bg-primary border-2 border-card;
+}
+
+.dark .react-flow__controls-button {
+  @apply bg-card border-border fill-foreground;
+}
+
+.dark .react-flow__edge-textbg {
+  fill: hsl(var(--card));
+}
+
+.dark .react-flow__edge-text {
+  fill: hsl(var(--muted-foreground));
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Loader2, Search, Wand2 } from 'lucide-react'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { Crosshair, Loader2, Search, Wand2 } from 'lucide-react'
 import { useRepositories } from '../hooks'
 import { api, errorMessage } from '../services/api'
 import { Button } from '../components/ui/Button'
@@ -25,9 +25,16 @@ TypeError: 'NoneType' object is not subscriptable`,
 export function NewInvestigation() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
+  // Set when coming from a row in the Dashboard's "Risky recent changes".
+  const prefill = (useLocation().state as { prefill?: { title: string; description: string } } | null)?.prefill
   const { repositories, loading } = useRepositories()
   const ready = repositories.filter(r => r.status === 'ready')
-  const [form, setForm] = useState({ repository_id: params.get('repo') || '', title: '', description: '', use_llm: true })
+  const [form, setForm] = useState({
+    repository_id: params.get('repo') || '',
+    title: prefill?.title ?? '',
+    description: prefill?.description ?? '',
+    use_llm: true,
+  })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -49,13 +56,19 @@ export function NewInvestigation() {
   }
 
   return (
-    <div className="p-6 max-w-3xl space-y-6">
+    <div className="px-6 py-6 lg:px-8 max-w-3xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">New investigation</h1>
+        <h1 className="text-2xl font-semibold">New investigation</h1>
         <p className="text-muted-foreground text-sm">
           Paste a bug report. Stack traces, function names and error messages all help the agent find entry points in the graph.
         </p>
       </div>
+      {prefill && (
+        <div className="flex gap-3 rounded-md border border-primary/30 bg-accent p-3 text-sm text-accent-foreground">
+          <Crosshair className="h-4 w-4 shrink-0 mt-0.5" />
+          <p>Filled in from a risky change. Add anything you have seen go wrong, then start the investigation.</p>
+        </div>
+      )}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <CardTitle className="text-base">Bug report</CardTitle>

@@ -136,6 +136,8 @@ class ParsedFile:
     functions: List[FunctionDef] = field(default_factory=list)
     classes: List[ClassDef] = field(default_factory=list)
     imports: List[str] = field(default_factory=list)
+    # Source outside every function: imports, constants, module state. Tests need it.
+    module_code: str = ""
 
 
 def _text(node: Optional[Node], src: bytes) -> str:
@@ -158,6 +160,7 @@ class FileParser:
         tree = get_parser(self.lang).parse(self.src)
         self._walk(tree.root_node, class_stack=[])
         self._assign_ids()
+        self.result.module_code = module_code(self.src.decode("utf-8", errors="replace"), self.result.functions)
         return self.result
 
     # ------------------------------------------------------------------ walk
@@ -490,6 +493,24 @@ class FileParser:
             key = f"fn:{f.qualified_name}"
             seen[key] = seen.get(key, 0) + 1
             f.id = stable_id(self.path, key, str(seen[key]))
+
+
+def module_code(content: str, functions: List[FunctionDef], limit: int = 1500) -> str:
+    inside = set()
+    for f in functions:
+        inside.update(range(f.start_line, f.end_line + 1))
+    kept, blank = [], False
+    for n, line in enumerate(content.splitlines(), start=1):
+        if n in inside:
+            continue
+        if not line.strip():
+            if not blank and kept:
+                kept.append("")
+            blank = True
+            continue
+        kept.append(line)
+        blank = False
+    return "\n".join(kept).strip()[:limit]
 
 
 def parse_file(path: str, content: str) -> ParsedFile:

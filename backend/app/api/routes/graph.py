@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query
 from app.api.routes.investigations import load_investigation
 from app.core.falkordb import get_falkordb
 from app.services import cypher_queries as Q
-from app.services import store
+from app.services import store, test_writer
 from app.services.graph_tools import GraphTools
 
 router = APIRouter()
@@ -94,6 +94,16 @@ async def hotspots(repo_id: str, limit: int = Query(10, ge=1, le=50)) -> List[Di
 async def risky_changes(repo_id: str, commits: int = Query(10, ge=1, le=300)) -> List[Dict[str, Any]]:
     repo = repo_or_404(repo_id)
     return GraphTools(repo["graph_name"]).risky_changes(commits).data
+
+
+@router.post("/{repo_id}/function/{function_id}/suggest-test")
+async def suggest_test(repo_id: str, function_id: str) -> Dict[str, Any]:
+    """Graph context for testing this function, plus a test written by the local model when one is available."""
+    repo = repo_or_404(repo_id)
+    try:
+        return await test_writer.suggest_test(repo["graph_name"], function_id)
+    except test_writer.FunctionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.get("/{repo_id}/function/{function_id}/source")

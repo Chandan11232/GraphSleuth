@@ -164,6 +164,31 @@ export interface RiskyChange {
   callers: number
 }
 
+export interface NamedRef {
+  name: string
+  file_path: string
+}
+
+export interface TestSuggestion {
+  function: { id: string; name: string; file_path: string; start_line: number }
+  language: string
+  framework: string
+  test_path: string
+  code: string
+  covers: string
+  model: string | null
+  error: string | null
+  context: {
+    summary: string
+    caller_count: number
+    callers: NamedRef[]
+    callees: NamedRef[]
+    example_tests: NamedRef[]
+    examples_are_nearby: boolean
+    cypher: string[]
+  }
+}
+
 export interface Health {
   status: string
   falkordb: boolean

@@ -5,6 +5,10 @@ the agent walks the graph of your repository (functions, calls, tests, commits a
 the root cause. It shows every hop as a Cypher query, then suggests a patch, reviewers, and what else the fix could break.
 It remembers every investigation in the graph, so the next bug in the same area starts with that history.
 
+It also works before a bug is reported: the dashboard lists **risky recent changes** (functions changed in the last few
+commits that no test calls, most-called first), with one click to **investigate** a change or **suggest a test** for it,
+written from the function's callers, callees and the nearest existing tests in the graph.
+
 Built for **Graph Hacks 2026** (WeMakeDevs × FalkorDB).
 
 **Tracks entered:** Agents That Act on Connected Data (primary) · Agent Memory and Coordination
@@ -14,7 +18,7 @@ Built for **Graph Hacks 2026** (WeMakeDevs × FalkorDB).
 | Multi-hop reasoning | Callers/callees up to 3 hops, tests reached through calls, call paths, blast radius |
 | Graph queries and algorithms as agent tools | 12 tools, all Cypher: PageRank hotspots, `shortestPath`, full-text search, BFS-style expansion |
 | Tool selection through MCP | `backend/app/mcp_server.py` exposes the same tools (plus `investigate_bug`, `run_cypher`) to any MCP client |
-| Actions based on what the graph shows | Ranks suspects, picks a root cause, writes a patch, names reviewers from commit authorship |
+| Actions based on what the graph shows | Ranks suspects, picks a root cause, writes a patch, names reviewers from commit authorship, flags risky untested changes and drafts tests for them |
 | Explainable results | Every step carries its Cypher; the **evidence graph** shows exactly the nodes and edges the agent visited |
 | Memory across sessions | `Investigation` nodes linked to the functions they suspected or confirmed; recalled and scored by later runs |
 | Shared state between agents | The web agent and an MCP client (e.g. Claude Code) read and write the same investigation memory |
@@ -66,7 +70,7 @@ flowchart LR
 | Label | Key properties | Notes |
 |---|---|---|
 | `Repository` | `id`, `name`, `url`, `ingested_at` | One per repo graph |
-| `File` | `path`, `language`, `loc`, `is_test` | |
+| `File` | `path`, `language`, `loc`, `is_test`, `module_code` | `module_code` = imports, constants and module state outside functions (used to write tests) |
 | `Class` | `id`, `name`, `file_path`, `start_line`, `end_line` | Also Go structs/interfaces, Java interfaces/enums |
 | `Function` | `id`, `name`, `qualified_name`, `file_path`, `start_line`, `end_line`, `signature`, `doc`, `code`, `complexity`, `tokens`, `in_test_file` | `tokens` = split identifier + path words, full-text indexed |
 | `Test` | `id`, `name`, `file_path`, `start_line`, `end_line`, `code` | Test functions and `it()/test()` cases |
@@ -198,6 +202,27 @@ RETURN f.qualified_name AS function, f.file_path AS file,
 ORDER BY callers DESC, last_changed DESC
 ```
 
+**Test writing: a function, how it is used, and what it depends on**
+```cypher
+MATCH (file:File)-[:CONTAINS]->(f:Function {id: $id})
+OPTIONAL MATCH (caller:Function)-[:CALLS]->(f)
+WITH file, f, collect(DISTINCT caller) AS callers
+OPTIONAL MATCH (f)-[:CALLS]->(callee:Function)
+WITH file, f, callers, collect(DISTINCT callee) AS callees
+RETURN f.code AS code, file.module_code AS module_code, size(callers) AS caller_count,
+       [c IN callers | {name: c.qualified_name, code: c.code}][..3] AS callers,
+       [c IN callees | {name: c.qualified_name, code: c.code}][..4] AS callees
+```
+
+**Test writing: the nearest existing tests, as style examples (up to two calls away)**
+```cypher
+MATCH (f:Function {id: $id})
+MATCH (t:Test)-[:TESTS]->(:Function)-[:CALLS*1..2]-(f)
+WITH t, count(*) AS links
+RETURN t.name AS name, t.file_path AS file_path, t.code AS code
+ORDER BY links DESC, t.name LIMIT 2
+```
+
 **Memory: recall earlier investigations of these functions or their neighbours**
 ```cypher
 UNWIND $ids AS fid
@@ -271,8 +296,10 @@ automatically. For other clients:
 ```
 
 Tools: `list_repositories`, `search_code`, `get_function`, `get_callers`, `get_callees`, `get_tests`,
-`recent_changes`, `find_experts`, `blast_radius`, `call_path`, `hotspots`, `risky_changes`, `recall_past_investigations`,
-`investigate_bug`, `confirm_root_cause`, `run_cypher` (read-only).
+`recent_changes`, `find_experts`, `blast_radius`, `call_path`, `hotspots`, `risky_changes`, `test_context`,
+`recall_past_investigations`, `investigate_bug`, `confirm_root_cause`, `run_cypher` (read-only).
+`test_context` gives an MCP client everything it needs to write a test itself: the function, its callers and callees,
+its module code and the nearest existing tests.
 Investigations started over MCP show up in the web UI's **Agent memory** panel and vice versa.
 
 ## Demo script (works with the bundled demo repo)
@@ -291,8 +318,14 @@ Investigations started over MCP show up in the web UI's **Agent memory** panel a
 8. **Run a second, differently worded bug** ("Partial refund crashes for deleted orders", no stack trace). The memory
    step reports *"process_refund was the confirmed root cause of 'Refund of unknown order returns 500'"*, and its memory
    factor goes from 0 to 1.0.
-9. Optionally ask Claude Code: *"Use codebase-detective to find who should review a change to process_refund"*. It
-   calls `find_experts` over MCP.
+9. **Back on the dashboard, Risky recent changes:** switch between 3 and 10 commits. At 3 it shows Lee Okafor's
+   `send_email` and `notify_refund` (1 caller each); at 10 the shared database helpers in `shop/db.py` (2 callers each)
+   rise to the top.
+10. **Suggest test** on `update_stock`: the dialog shows its 2 callers, the nearest test
+    (`test_full_refund_marks_order_refunded`, two calls away) and a draft pytest file for `tests/test_db.py`.
+11. **Investigate** on any row opens a new investigation already filled in for that change.
+12. Optionally ask Claude Code: *"Use codebase-detective to find who should review a change to process_refund"*. It
+    calls `find_experts` over MCP.
 
 ## API
 
@@ -307,6 +340,7 @@ Investigations started over MCP show up in the web UI's **Agent memory** panel a
 | `POST` | `/api/v1/investigations/{id}/confirm` | Record the real root cause (`{function_id}`) |
 | `GET` | `/api/v1/graph/investigation/{id}` | Evidence subgraph |
 | `GET` | `/api/v1/graph/{repo_id}/hotspots` · `/risky-changes?commits=N` · `/function/{fid}` · `/function/{fid}/source` | |
+| `POST` | `/api/v1/graph/{repo_id}/function/{fid}/suggest-test` | Graph context for testing the function, plus a draft test from the local model |
 
 ## Project structure
 
@@ -317,6 +351,7 @@ backend/app/
   services/cypher_queries.py  every Cypher query
   services/graph_tools.py     agent tools (shared by the agent and MCP)
   services/agent.py           investigation pipeline, scoring, LLM loop, patch, memory
+  services/test_writer.py     suggested tests: graph context → prompt → draft test file
   services/llm.py             Ollama client (local or Ollama Cloud)
   services/store.py           repository registry graph
   api/routes/                 repos, investigations (+SSE), graph
@@ -324,6 +359,7 @@ backend/app/
 frontend/src/
   pages/                      Dashboard, NewInvestigation, InvestigationView
   components/investigation/   EvidenceGraph (React Flow + dagre)
+  components/SuggestTestDialog.tsx   suggested-test dialog (Dashboard and Fix tab)
 demo/create_demo_repo.py      synthetic demo repository with history
 ```
 
@@ -334,7 +370,9 @@ demo/create_demo_repo.py      synthetic demo repository with history
 - `TOUCHED` maps each commit's hunks onto today's function line spans, so it's accurate for recent commits and
   approximate for old ones.
 - Re-connecting a repository rebuilds its graph, which clears that repository's investigation memory.
-- Patches come from a local model and must be reviewed.
+- Patches and suggested tests come from a local model and must be reviewed. With `qwen2.5-coder:7b`, roughly half of
+  the generated test cases passed on the demo repo; the usual mistakes are invented test data and wrong expected values.
+- `module_code` is stored at ingestion; repositories ingested before it existed need re-connecting for better tests.
 
 ## Data
 
@@ -342,8 +380,25 @@ Only public repositories, or the synthetic `demo/acme-shop` repo (all names and 
 
 ## AI assistance disclosure
 
-This project was built with an AI coding assistant (Claude Code). <!-- Edit to describe exactly how you used it and
-what you designed, verified and changed yourselves (rules 11–13). -->
+<!-- DRAFT written with Claude from our sessions. Check every line and reword it in your own voice before submitting. -->
+
+This project was built with heavy use of an AI coding assistant, **Claude Code**. To be clear about who did what:
+
+**Written by Claude Code:** most of the code, including the ingestion pipeline, the agent, the graph tools, the MCP
+server, the API, the frontend, the demo repository and the tests, and most of the Cypher queries.
+
+**Done by me (Chandan):**
+- Chose the project idea and the features, and directed the build and every change.
+- Tested it on the demo repo and on my own repository, and found real bugs that were then fixed: a blank page, a
+  PageRank error on my todolist repo, and the app using 98% of my machine's RAM.
+- Built the risky-changes query step by step in the FalkorDB Browser, checking the results at each step, and found the
+  missing `LIMIT` that produced 25 rows instead of 4. Claude wrote the queries.
+- Wrote the commit-window filter (3/5/7/10 commits) on the Risky recent changes card.
+- Extended the risky-changes query to count callers (Claude helped fill in the `CALLS`/`count` parts; I ran and checked
+  it in the FalkorDB Browser) and wrote the test assertion for it.
+- Ran the setup with Docker and Ollama, and reviewed the results of each feature.
+
+Claude Code wrote the Investigate and Suggest test buttons, the test writer and the UI redesign at my request.
 
 ## License
 

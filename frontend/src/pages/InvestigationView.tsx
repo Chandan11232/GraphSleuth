@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle, ArrowLeft, Bot, Brain, CheckCircle, ChevronDown, ChevronRight, FileCode, GitBranch, GitCommit,
-  Loader2, Network, Search, ShieldCheck, Sparkles, TestTube, Users, Wrench,
+  FlaskConical, Loader2, Network, Search, ShieldCheck, Sparkles, TestTube, Users, Wrench,
 } from 'lucide-react'
 import { useEvidenceGraph, useInvestigation } from '../hooks'
 import { api, errorMessage, type AnalysisStep, type GraphNode, type Suspect } from '../services/api'
@@ -11,6 +11,7 @@ import { Badge } from '../components/ui/Badge'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/Tabs'
 import { EvidenceGraph } from '../components/investigation/EvidenceGraph'
+import { SuggestTestDialog, type TestTarget } from '../components/SuggestTestDialog'
 
 const STEP_ICONS: Record<string, any> = {
   parse_bug_report: Search, match_stack_frames: Search, match_identifiers: Search, search_code: Search,
@@ -31,7 +32,7 @@ function StepCard({ step }: { step: AnalysisStep }) {
   return (
     <div className="flex gap-3">
       <div className="flex flex-col items-center">
-        <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${isLLM ? 'bg-violet-100 text-violet-700' : 'bg-primary/10 text-primary'}`}>
+        <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${isLLM ? 'bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300' : 'bg-primary/10 text-primary'}`}>
           {isLLM ? <Bot className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
         </div>
         <div className="w-px flex-1 bg-border mt-1" />
@@ -40,7 +41,7 @@ function StepCard({ step }: { step: AnalysisStep }) {
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs text-muted-foreground tabular-nums">#{step.step}</span>
           <h4 className="font-medium text-sm">{step.action.replace(/^llm_/, '').replace(/_/g, ' ')}</h4>
-          {isLLM && <Badge variant="outline" className="text-violet-700 border-violet-300 text-[10px]">LLM chose this</Badge>}
+          {isLLM && <Badge variant="outline" className="text-violet-700 border-violet-300 dark:text-violet-300 dark:border-violet-500/50 text-[10px]">LLM chose this</Badge>}
           {step.tool && !isLLM && <Badge variant="outline" className="text-[10px]">tool: {step.tool}</Badge>}
         </div>
         <p className="text-sm mt-1">{step.result_summary}</p>
@@ -51,7 +52,7 @@ function StepCard({ step }: { step: AnalysisStep }) {
           </button>
         )}
         {open && (
-          <pre className="mt-2 p-3 bg-slate-950 text-slate-100 rounded-md text-[11px] overflow-x-auto whitespace-pre">{step.query}</pre>
+          <pre className="mt-2 p-3 bg-sidebar text-sidebar-foreground rounded-md font-mono text-[11px] overflow-x-auto whitespace-pre">{step.query}</pre>
         )}
       </div>
     </div>
@@ -78,7 +79,7 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
 function DiffView({ diff }: { diff: string }) {
   return (
-    <pre className="text-xs bg-slate-950 rounded-lg p-4 overflow-x-auto">
+    <pre className="font-mono text-xs bg-sidebar rounded-lg p-4 overflow-x-auto">
       {diff.split('\n').map((line, i) => {
         const color = line.startsWith('+') && !line.startsWith('+++') ? 'text-green-400'
           : line.startsWith('-') && !line.startsWith('---') ? 'text-red-400'
@@ -101,6 +102,7 @@ export function InvestigationView() {
   const [selected, setSelected] = useState<GraphNode | null>(null)
   const [confirming, setConfirming] = useState<string | null>(null)
   const [confirmError, setConfirmError] = useState<string | null>(null)
+  const [testTarget, setTestTarget] = useState<TestTarget | null>(null)
 
   const confirm = async (s: Suspect) => {
     setConfirming(s.id)
@@ -124,11 +126,11 @@ export function InvestigationView() {
   const confirmedIds = new Set((result?.confirmed || []).map(c => c.id))
 
   return (
-    <div className="p-6 space-y-5 max-w-7xl">
+    <div className="px-6 py-6 lg:px-8 space-y-5 max-w-7xl">
       <div className="flex items-start gap-3">
         <Button variant="ghost" size="sm" onClick={() => navigate(-1)}><ArrowLeft className="h-4 w-4" /></Button>
         <div className="flex-1 min-w-0">
-          <h1 className="text-2xl font-bold truncate">{result?.title || 'Investigation'}</h1>
+          <h1 className="text-2xl font-semibold truncate">{result?.title || 'Investigation'}</h1>
           <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
             {result?.repository_name && <span>{result.repository_name}</span>}
             <Badge variant={status === 'failed' ? 'destructive' : status === 'running' ? 'secondary' : 'default'}>
@@ -143,9 +145,9 @@ export function InvestigationView() {
       {error && <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">{error}</div>}
 
       {noMatch && status !== 'failed' && (
-        <Card className="border-amber-200 bg-amber-50/50">
+        <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-500/30 dark:bg-amber-500/10">
           <CardContent className="p-4 flex gap-4 items-start">
-            <AlertTriangle className="h-7 w-7 text-amber-600 shrink-0" />
+            <AlertTriangle className="h-7 w-7 text-amber-600 dark:text-amber-400 shrink-0" />
             <div className="text-sm">
               <p className="font-medium">No matching code found</p>
               <p className="text-muted-foreground mt-1">
@@ -157,12 +159,12 @@ export function InvestigationView() {
       )}
 
       {verdict && (
-        <Card className="border-red-200 bg-red-50/40">
+        <Card className="border-red-200 bg-red-50/40 dark:border-red-500/40 dark:bg-red-500/10">
           <CardContent className="p-4 flex gap-4 items-start">
-            <ShieldCheck className="h-8 w-8 text-red-600 shrink-0" />
+            <ShieldCheck className="h-8 w-8 text-red-600 dark:text-red-400 shrink-0" />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs uppercase tracking-wide text-red-700">Root cause</span>
+                <span className="text-xs uppercase tracking-wide text-red-700 dark:text-red-300">Root cause</span>
                 <code className="font-semibold">{verdict.name}</code>
                 <span className="text-xs text-muted-foreground">{verdict.file_path}</span>
                 <Badge variant="outline">{Math.round(verdict.confidence * 100)}% confidence</Badge>
@@ -236,7 +238,7 @@ export function InvestigationView() {
         <TabsContent value="suspects" className="mt-4 space-y-3">
           {confirmError && <p className="text-sm text-destructive">{confirmError}</p>}
           {suspects.map(s => (
-            <Card key={s.id} className={s.id === verdict?.id ? 'border-red-300' : ''}>
+            <Card key={s.id} className={s.id === verdict?.id ? 'border-red-300 dark:border-red-500/50' : ''}>
               <CardContent className="p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -293,7 +295,7 @@ export function InvestigationView() {
                     <CardTitle className="text-base flex items-center gap-2"><FileCode className="h-4 w-4" /> Current source · {fix.target.file_path}:{fix.target.start_line}</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <pre className="text-xs bg-muted rounded-lg p-4 overflow-x-auto">{fix.target.code}</pre>
+                    <pre className="font-mono text-xs bg-muted rounded-lg p-4 overflow-x-auto">{fix.target.code}</pre>
                   </CardContent>
                 </Card>
               </div>
@@ -321,7 +323,16 @@ export function InvestigationView() {
                     <p className="font-medium text-xs mt-2">Tests that exercise it</p>
                     {fix.blast_radius.covering_tests.length
                       ? fix.blast_radius.covering_tests.map(t => <p key={t} className="text-xs font-mono">{t}</p>)
-                      : <p className="text-xs text-amber-700">None. Add a regression test.</p>}
+                      : (
+                        <div className="space-y-2">
+                          <p className="text-xs text-amber-800 dark:text-amber-300">None. Add a regression test.</p>
+                          <Button size="sm" variant="outline" className="h-8" onClick={() => result && setTestTarget({
+                            repoId: result.repository_id, functionId: fix.target.id, name: fix.target.name,
+                          })}>
+                            <FlaskConical className="h-3.5 w-3.5 mr-1.5" /> Suggest a test
+                          </Button>
+                        </div>
+                      )}
                   </CardContent>
                 </Card>
               </div>
@@ -329,6 +340,7 @@ export function InvestigationView() {
           )}
         </TabsContent>
       </Tabs>
+      <SuggestTestDialog target={testTarget} onClose={() => setTestTarget(null)} />
     </div>
   )
 }

@@ -75,11 +75,14 @@ def repo_for_investigation(investigation_id: str) -> Optional[Dict[str, Any]]:
 
 def ensure_registry() -> None:
     db = get_falkordb()
-    for q in ("CREATE INDEX FOR (r:Repository) ON (r.id)", "CREATE INDEX FOR (i:InvestigationRef) ON (i.id)"):
-        try:
+    try:
+        existing = {r["label"] for r in db.ro(REG, "CALL db.indexes() YIELD label RETURN label")}
+    except Exception:
+        existing = set()  # the registry graph does not exist yet
+    for label, q in (("Repository", "CREATE INDEX FOR (r:Repository) ON (r.id)"),
+                     ("InvestigationRef", "CREATE INDEX FOR (i:InvestigationRef) ON (i.id)")):
+        if label not in existing:
             db.query(REG, q)
-        except Exception:
-            pass  # index already exists
     # Ingestion running when the server stopped will never finish.
     db.query(REG, "MATCH (r:Repository) WHERE r.status IN ['pending', 'ingesting'] "
                   "SET r.status = 'error', r.error_message = 'Interrupted by a server restart; delete and reconnect.'")
