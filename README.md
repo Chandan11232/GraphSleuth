@@ -240,7 +240,7 @@ Every factor comes from the graph, and the UI shows the breakdown for each suspe
 ```
 score = 0.40·relevance      (stack frame 0.85–1.0, named 0.9, full-text ≤0.7, neighbours decay per hop)
       + 0.20·recent_change  (how recent the last TOUCHED commit is within the repo's history, squared)
-      + 0.15·memory         (1.0 confirmed root cause before, 0.5 suspected before, 0.4 neighbour of a confirmed one)
+      + 0.15·memory         (1.0 confirmed root cause before, 0.4 neighbour of a confirmed one; unconfirmed guesses are not scored)
       + 0.12·untested       (no TESTS edge 1.0, only reached through callers 0.5)
       + 0.08·complexity     (cyclomatic complexity from the AST, capped at 15)
       + 0.05·centrality     (PageRank on CALLS, normalised)

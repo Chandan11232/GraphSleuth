@@ -106,6 +106,15 @@ def test_anonymous_js_callbacks_become_functions():
     assert "append" in body_tokens_for(submit).split()
 
 
+def test_event_api_words_are_not_tokens():
+    src = 'form.addEventListener("submit", (e) => { list.classList.add("task"); btn.addEventListener("click", go) })'
+    fn = parse_file("main.js", src).functions[0]
+    assert fn.qualified_name == "form.addEventListener('submit')"
+    assert "add" not in tokens_for(fn).split()[:-1] and "listener" not in tokens_for(fn).split()[:-1]
+    assert "add" in body_tokens_for(fn).split()  # classList.add is real work
+    assert "listener" not in body_tokens_for(fn).split()
+
+
 def test_module_code_keeps_what_is_outside_functions():
     pf = parse_file("shop/payments.py", PY)
     assert pf.module_code.startswith("from shop.orders import load_order")

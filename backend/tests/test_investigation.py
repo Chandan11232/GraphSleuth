@@ -226,5 +226,13 @@ async def test_plain_english_report_finds_anonymous_handler(tmp_path):
         result = await _run(name, "the new tasks are not getting append to the main list",
                             "when i am trying to add a new task, its not getting added to the main list.")
         assert result["verdict"]["name"] == "form.addEventListener('submit')"
+
+        # "added" must not match every handler through the word "add" in addEventListener.
+        result = await _run(name, "new tasks not getting added", "i am unable to add new tasks")
+        assert result["verdict"]["name"] == "form.addEventListener('submit')"
+
+        # Earlier unconfirmed suspicions are noted but not scored, so a wrong guess can't keep winning.
+        again = await _run(name, "new tasks not getting added", "i am unable to add new tasks")
+        assert all(s["breakdown"]["memory"] == 0 for s in again["suspects"])
     finally:
         get_falkordb().delete_graph(name)

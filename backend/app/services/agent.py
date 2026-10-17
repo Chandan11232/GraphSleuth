@@ -323,11 +323,15 @@ class Investigation:
             if row["relation"] == "CONFIRMED":
                 val = 1.0 if row["same_function"] else 0.4
             else:
-                val = 0.5 if row["same_function"] else 0.15
+                # An unconfirmed suspicion is only an earlier guess. Scoring it would let a wrong
+                # guess win the next run, be saved as a suspect again, and keep winning.
+                val = 0.0
+                if "memory_note" not in c and row["same_function"]:
+                    c["memory_note"] = f"unconfirmed suspect in \"{row['bug_title']}\" (not scored)"
             if val > c.get("memory", 0):
                 c["memory"] = val
-                c["memory_note"] = f"{'confirmed root cause' if row['relation'] == 'CONFIRMED' else 'suspect'} " \
-                                   f"in \"{row['bug_title']}\"" + ("" if row["same_function"] else f" (neighbour {row['past_fn']})")
+                c["memory_note"] = f"confirmed root cause in \"{row['bug_title']}\"" + \
+                                   ("" if row["same_function"] else f" (neighbour {row['past_fn']})")
         for row in memory.data["by_text"]:
             for fid in row["confirmed_ids"]:
                 c = self.candidates.get(fid)

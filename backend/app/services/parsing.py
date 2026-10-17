@@ -524,18 +524,27 @@ BODY_STOPWORDS = {
 }
 
 
+# Event-registration APIs. Their words ("add event listener") are in every handler's name
+# and say nothing about what the handler does, so "tasks are not added" would match all of them.
+EVENT_APIS = {"addEventListener", "removeEventListener", "addListener", "removeListener"}
+
+
+def _without_event_apis(text: str) -> str:
+    return re.sub(r"\b(" + "|".join(EVENT_APIS) + r")\b", " ", text)
+
+
 def body_tokens_for(fn: FunctionDef, limit: int = 150) -> str:
     """Words from identifiers and string literals in the body, so a report that
     says "tasks are not appended to the list" can match `list_el.appendChild(task_el)`."""
     words: List[str] = []
-    for ident in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", fn.own_code or fn.code):
+    for ident in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", _without_event_apis(fn.own_code or fn.code)):
         words.extend(split_identifier(ident))
     seen = dict.fromkeys(w for w in words if len(w) > 2 and w not in BODY_STOPWORDS)
     return " ".join(list(seen)[:limit])
 
 
 def tokens_for(fn: FunctionDef) -> str:
-    words = split_identifier(fn.name)
+    words = split_identifier(_without_event_apis(fn.name))
     if fn.class_name:
         words += split_identifier(fn.class_name)
     for part in PurePosixPath(fn.file_path).with_suffix("").parts:
