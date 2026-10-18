@@ -1,4 +1,4 @@
-# Codebase Detective
+# GraphSleuth
 
 **A bug-investigation agent that reasons over a FalkorDB code graph.** Paste a bug report (a stack trace helps) and
 the agent walks the graph of your repository (functions, calls, tests, commits and the people who wrote them) to find
