@@ -1,5 +1,7 @@
 # GraphSleuth
 
+**Live demo: [graph-sleuth.vercel.app](https://graph-sleuth.vercel.app/)**
+
 **A bug-investigation agent that reasons over a FalkorDB code graph.** Paste a bug report (a stack trace helps) and
 the agent walks the graph of your repository (functions, calls, tests, commits and the people who wrote them) to find
 the root cause. It shows every hop as a Cypher query, then suggests a patch, reviewers, and what else the fix could break.
@@ -454,7 +456,7 @@ score = 0.40·relevance      (stack frame 0.85–1.0, named 0.9, full-text ≤0.
 Prerequisites: Docker. Optional: [Ollama](https://ollama.com) with a tool-calling model for the LLM layer and patches.
 
 ```bash
-git clone <this repo> && cd codebase-detective
+git clone <this repo> && cd graphsleuth
 cp .env.example .env
 python3 demo/create_demo_repo.py          # builds demo/acme-shop with a planted bug + git history
 ollama pull qwen2.5-coder:7b              # optional; without it investigations run graph-only
@@ -517,7 +519,7 @@ automatically. For other clients:
 ```json
 {
   "mcpServers": {
-    "codebase-detective": {
+    "graphsleuth": {
       "command": "/abs/path/backend/venv/bin/python",
       "args": ["-m", "app.mcp_server"],
       "cwd": "/abs/path/backend",
@@ -577,7 +579,7 @@ Investigations started over MCP show up in the web UI's **Agent memory** panel a
 
     The investigation is now `confirmed`.
 
-14. Optionally ask Claude Code: _"Use codebase-detective to find who should review a change to process_refund"_. It
+14. Optionally ask Claude Code: _"Use graphsleuth to find who should review a change to process_refund"_. It
     calls `find_experts` or `who_owns` over MCP, or `ask_company_brain` for a cited answer.
 
 ## API

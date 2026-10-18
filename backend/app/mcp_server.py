@@ -28,7 +28,7 @@ logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
 structlog.configure(logger_factory=structlog.PrintLoggerFactory(file=sys.stderr))
 
 mcp = FastMCP(
-    "codebase-detective",
+    "graphsleuth",
     instructions=(
         "Tools over a FalkorDB code graph (functions, CALLS, tests, commits, authors), the team knowledge around it "
         "(issues, pull requests, reviews, decisions, CODEOWNERS) and a memory of past bug investigations. Start with "

@@ -453,7 +453,7 @@ def build_pr_draft(graph_name: str, inv: Dict[str, Any], ver: Dict[str, Any]) ->
     reviewers = _reviewers(graph_name, fix)
     blast = fix.get("blast_radius") or {}
 
-    lines = [f"Fixes a bug found by Codebase Detective: **{inv.get('title', '')}**", ""]
+    lines = [f"Fixes a bug found by GraphSleuth: **{inv.get('title', '')}**", ""]
     lines += ["## Root cause", f"`{fn['name']}` in `{fn['file_path']}`. {verdict.get('explanation', '')}".strip()]
     if fix.get("cause"):
         lines.append(f"\n{fix['cause']}")
@@ -484,7 +484,7 @@ def build_pr_draft(graph_name: str, inv: Dict[str, Any], ver: Dict[str, Any]) ->
     lines += ["", "---", f"Investigation `{inv['id']}`. Every claim above comes from a node in the FalkorDB graph."]
     return {
         "title": f"Fix: {inv.get('title', '')}"[:120],
-        "branch": f"detective/fix-{short}",
+        "branch": f"graphsleuth/fix-{short}",
         "body": "\n".join(lines),
         "reviewers": reviewers,
         "fixes_issues": [i["number"] for i in fixes[:3]],

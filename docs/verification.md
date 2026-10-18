@@ -1,7 +1,7 @@
 # Closing the loop: verify the fix, then ship it
 
 An agent that only *suggests* a patch leaves the hardest part to a person: is the patch right, and what does it
-break? Codebase Detective proves the fix in a sandbox first, using the code graph to decide what to run, and only
+break? GraphSleuth proves the fix in a sandbox first, using the code graph to decide what to run, and only
 then drafts the pull request. A person still approves the PR before it's opened.
 
 ```mermaid

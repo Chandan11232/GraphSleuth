@@ -18,7 +18,7 @@ services:
         sync: false
       - key: FALKORDB_PASSWORD
         sync: false
-      - key: CORS_ORIGINS        # your Vercel URL, e.g. https://codebase-detective.vercel.app
+      - key: CORS_ORIGINS        # your Vercel URL, e.g. https://graph-sleuth.vercel.app
         sync: false
       - key: LOCAL_REPOS_ROOT    # only the baked-in demo repo can be connected by path
         value: /demo

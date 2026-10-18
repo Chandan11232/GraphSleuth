@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     API_V1_PREFIX: str = "/api/v1"
-    PROJECT_NAME: str = "Codebase Detective"
+    PROJECT_NAME: str = "GraphSleuth"
     VERSION: str = "2.0.0"
 
 

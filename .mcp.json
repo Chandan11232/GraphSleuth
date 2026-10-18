@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "codebase-detective": {
+    "graphsleuth": {
       "command": "backend/venv/bin/python",
       "args": ["-m", "app.mcp_server"],
       "cwd": "backend",

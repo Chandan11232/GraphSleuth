@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
-    description="Codebase Detective: a bug-investigation agent that reasons over a FalkorDB code graph.",
+    description="GraphSleuth: a bug-investigation agent that reasons over a FalkorDB code graph.",
     lifespan=lifespan,
 )
 

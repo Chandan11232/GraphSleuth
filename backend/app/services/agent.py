@@ -415,7 +415,7 @@ class Investigation:
         table = "\n".join(f"{s['rank']}. {s['name']} [{s['file_path']}] score={s['suspicion_score']:.2f} — {s['reasoning']}"
                           for s in top)
         system = (
-            "You are Codebase Detective, a debugging agent. The codebase is stored as a graph (functions, CALLS, "
+            "You are GraphSleuth, a debugging agent. The codebase is stored as a graph (functions, CALLS, "
             "tests, commits, authors). Use the tools to verify which function contains the root cause. Prefer "
             "reading code (get_function) and following calls. Be brief. When you are confident, reply with ONLY a "
             'JSON object: {"root_cause": "<function name>", "explanation": "<2-4 sentences citing graph evidence>", '

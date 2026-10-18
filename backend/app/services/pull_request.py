@@ -51,7 +51,7 @@ async def open_pull_request(repo_url: str, token: str, ver: Dict[str, Any]) -> D
             except PullRequestError as e:
                 if " 404 " not in str(e):
                     raise
-            body = {"message": f"{draft['title']}\n\nVerified by Codebase Detective ({ver['headline']}).",
+            body = {"message": f"{draft['title']}\n\nVerified by GraphSleuth ({ver['headline']}).",
                     "content": base64.b64encode(text.encode()).decode(), "branch": draft["branch"]}
             if existing:
                 body["sha"] = existing["sha"]
@@ -79,5 +79,5 @@ def format_patch(ver: Dict[str, Any]) -> str:
         lines = ver["test_code"].rstrip("\n").splitlines()
         diff += (f"--- /dev/null\n+++ b/{ver['test_path']}\n@@ -0,0 +1,{len(lines)} @@\n"
                  + "".join(f"+{ln}\n" for ln in lines))
-    return (f"From: Codebase Detective <detective@localhost>\nSubject: [PATCH] {draft['title']}\n\n"
+    return (f"From: GraphSleuth <graphsleuth@localhost>\nSubject: [PATCH] {draft['title']}\n\n"
             f"{draft['body']}\n---\n{diff}")

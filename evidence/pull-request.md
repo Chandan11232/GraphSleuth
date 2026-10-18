@@ -1,6 +1,6 @@
 # Fix: Refunding an unknown order crashes with a 500
 
-Fixes a bug found by Codebase Detective: **Refunding an unknown order crashes with a 500**
+Fixes a bug found by GraphSleuth: **Refunding an unknown order crashes with a 500**
 
 ## Root cause
 `process_refund` in `shop/payments/refunds.py`. process_refund in shop/payments/refunds.py scores highest (0.62). It is named in the report or sits on the stack trace. It was recently changed by Dana Kim ("Refactor refund flow: notify customer, simplify order lookup").
