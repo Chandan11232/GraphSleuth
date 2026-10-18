@@ -34,12 +34,12 @@ export function Layout() {
     <div className="flex h-screen bg-background">
       <aside className="w-60 bg-sidebar text-sidebar-foreground flex flex-col shrink-0">
         <div className="px-4 py-5 border-b border-white/10">
-          <Link to="/" className="flex items-center gap-2.5" title="About Codebase Detective">
+          <Link to="/" className="flex items-center gap-2.5" title="About GraphSleuth">
             <div className="h-8 w-8 rounded-md bg-primary flex items-center justify-center">
               <Bug className="h-4 w-4 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-[15px] font-semibold leading-tight">Codebase Detective</h1>
+              <h1 className="text-[15px] font-semibold leading-tight">GraphSleuth</h1>
               <p className="text-[11px] text-sidebar-muted">bug hunting on a code graph</p>
             </div>
           </Link>

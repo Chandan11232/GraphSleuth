@@ -139,7 +139,7 @@ export function Landing() {
             <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary">
               <Bug className="h-4 w-4 text-primary-foreground" />
             </span>
-            <span className="hidden whitespace-nowrap text-[15px] font-semibold min-[380px]:inline">Codebase Detective</span>
+            <span className="hidden whitespace-nowrap text-[15px] font-semibold min-[380px]:inline">GraphSleuth</span>
           </Link>
           <nav className="hidden flex-1 items-center gap-5 text-sm text-sidebar-muted md:flex" aria-label="Sections">
             {NAV.map(n => (
@@ -180,7 +180,7 @@ export function Landing() {
               Find the function <span className="text-teal-300">that broke it.</span>
             </h1>
             <p className="max-w-xl text-lg leading-relaxed text-sidebar-muted">
-              Codebase Detective turns a repository into a graph of functions, calls, tests, commits and the people
+              GraphSleuth turns a repository into a graph of functions, calls, tests, commits and the people
               behind them, then walks it hop by hop from a bug report to the root cause. Every step is a Cypher query
               you can read.
             </p>
@@ -440,12 +440,12 @@ RETURN DISTINCT f.qualified_name, c.message, p.name`}
           </div>
           <div className="overflow-hidden rounded-xl border border-white/10 bg-sidebar text-sidebar-foreground shadow-xl">
             <div className="flex items-center gap-2 border-b border-white/10 px-4 py-2 font-mono text-[11px] text-sidebar-muted">
-              <Terminal className="h-3.5 w-3.5" /> claude · codebase-detective
+              <Terminal className="h-3.5 w-3.5" /> claude · graphsleuth
             </div>
             <div className="space-y-4 px-5 py-5 font-mono text-[12.5px] leading-relaxed">
-              <p><span className="text-teal-300">›</span> Use codebase-detective to find who should review a change to process_refund</p>
+              <p><span className="text-teal-300">›</span> Use graphsleuth to find who should review a change to process_refund</p>
               <p className="text-sidebar-muted">
-                ⏺ codebase-detective · <span className="text-sidebar-foreground">find_experts</span>(repository: "acme-shop", function: "process_refund")
+                ⏺ graphsleuth · <span className="text-sidebar-foreground">find_experts</span>(repository: "acme-shop", function: "process_refund")
               </p>
               <pre className="overflow-x-auto rounded-md bg-black/30 px-3 py-2 text-[11.5px] text-slate-300">
 {`MATCH (p1:Person)-[:AUTHORED]->(:Commit)-[:TOUCHED]->(f)
