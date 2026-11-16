@@ -1,19 +1,20 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
-import { Bug, Database, LayoutDashboard, Library, Moon, Sparkles } from 'lucide-react'
+import { Moon } from 'lucide-react'
+import { Mark, Wordmark } from './Mark'
 import { api, type Health } from '../services/api'
 import { ErrorBoundary } from './ErrorBoundary'
 import { useTheme } from '../hooks'
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
-  `flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
-    isActive ? 'bg-sidebar-active text-white font-medium' : 'text-sidebar-muted hover:bg-white/5 hover:text-sidebar-foreground'
+  `group flex items-baseline gap-3 border-l-2 py-2 pl-4 pr-3 text-sm transition-colors ${
+    isActive ? 'border-signal bg-sidebar-active font-medium text-sidebar-foreground' : 'border-transparent text-sidebar-muted hover:text-sidebar-foreground'
   }`
 
 function Dot({ ok }: { ok: boolean }) {
   return (
     <span
-      className={`inline-block h-2 w-2 rounded-full shrink-0 ${ok ? 'bg-emerald-400' : 'bg-red-400'}`}
+      className={`inline-block h-1.5 w-1.5 shrink-0 ${ok ? 'bg-signal' : 'bg-risk-high'}`}
       aria-label={ok ? 'connected' : 'not connected'}
     />
   )
@@ -32,56 +33,44 @@ export function Layout() {
 
   return (
     <div className="flex h-screen bg-background">
-      <aside className="w-60 bg-sidebar text-sidebar-foreground flex flex-col shrink-0">
-        <div className="px-4 py-5 border-b border-white/10">
-          <Link to="/" className="flex items-center gap-2.5" title="About GraphSleuth">
-            <div className="h-8 w-8 rounded-md bg-primary flex items-center justify-center">
-              <Bug className="h-4 w-4 text-primary-foreground" />
-            </div>
-            <div>
-              <h1 className="text-[15px] font-semibold leading-tight">GraphSleuth</h1>
-              <p className="text-[11px] text-sidebar-muted">bug hunting on a code graph</p>
-            </div>
-          </Link>
-        </div>
-        <nav className="flex-1 p-3 space-y-1">
-          <NavLink to="/repos" className={navClass}>
-            <LayoutDashboard className="h-4 w-4" /> Repositories
-          </NavLink>
-          <NavLink to="/investigate" className={navClass}>
-            <Bug className="h-4 w-4" /> New investigation
-          </NavLink>
-          <NavLink to="/brain" className={navClass}>
-            <Library className="h-4 w-4" /> Company brain
-          </NavLink>
+      <aside className="flex w-56 shrink-0 flex-col bg-sidebar text-sidebar-foreground">
+        <Link to="/" className="flex h-14 items-center gap-2 px-4" title="About GraphSleuth">
+          <Mark className="h-6 w-6" />
+          <Wordmark />
+        </Link>
+        <nav className="flex-1 space-y-px pt-4">
+          <p className="px-4 pb-2 font-mono text-[10px] uppercase tracking-[0.14em] text-sidebar-muted/70">Workspace</p>
+          {[
+            ['/repos', 'Repositories'],
+            ['/investigate', 'New investigation'],
+            ['/brain', 'Company brain'],
+          ].map(([to, label], i) => (
+            <NavLink key={to} to={to} className={navClass}>
+              <span className="font-mono text-[10px] tabular-nums text-sidebar-muted">0{i + 1}</span>
+              {label}
+            </NavLink>
+          ))}
         </nav>
-        <div className="px-3 pb-3">
-          <button
-            type="button"
-            onClick={toggle}
-            role="switch"
-            aria-checked={theme === 'dark'}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm text-sidebar-muted hover:bg-white/5 hover:text-sidebar-foreground transition-colors"
-          >
-            <Moon className="h-4 w-4" />
-            <span className="flex-1 text-left">Dark theme</span>
+        <button
+          type="button"
+          onClick={toggle}
+          role="switch"
+          aria-checked={theme === 'dark'}
+          className="mx-4 mb-4 flex items-center gap-3 py-2 text-sm text-sidebar-muted transition-colors hover:text-sidebar-foreground"
+        >
+          <Moon className="h-4 w-4" />
+          <span className="flex-1 text-left">Dark theme</span>
+          <span className={`relative h-4 w-7 transition-colors ${theme === 'dark' ? 'bg-signal' : 'bg-white/15'}`} aria-hidden="true">
             <span
-              className={`relative h-4 w-7 rounded-full transition-colors ${theme === 'dark' ? 'bg-primary' : 'bg-white/15'}`}
-              aria-hidden="true"
-            >
-              <span
-                className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-transform ${theme === 'dark' ? 'translate-x-3.5' : 'translate-x-0.5'}`}
-              />
-            </span>
-          </button>
-        </div>
-        <div className="p-4 border-t border-white/10 space-y-2 text-xs text-sidebar-muted">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.08em]">Services</p>
-          <div className="flex items-center gap-2"><Database className="h-3.5 w-3.5" /> <span className="flex-1">FalkorDB</span> <Dot ok={!!health?.falkordb} /></div>
+              className={`absolute top-0.5 h-3 w-3 transition-transform ${theme === 'dark' ? 'translate-x-3.5 bg-ink' : 'translate-x-0.5 bg-white'}`}
+            />
+          </span>
+        </button>
+        <div className="space-y-2 border-t border-white/10 p-4 font-mono text-[11px] text-sidebar-muted">
+          <div className="flex items-center gap-2"><span className="flex-1">FalkorDB</span> <Dot ok={!!health?.falkordb} /></div>
           <div className="flex items-center gap-2">
-            <Sparkles className="h-3.5 w-3.5" />
-            <span className="truncate flex-1" title={health?.llm.host}>
-              LLM: {health?.llm.agent_model ?? (health?.llm.enabled ? 'no tool model' : 'off (graph-only)')}
+            <span className="flex-1 truncate" title={health?.llm.host}>
+              LLM {health?.llm.agent_model ?? (health?.llm.enabled ? 'no tool model' : 'off (graph-only)')}
             </span>
             <Dot ok={!!health?.llm.agent_model} />
           </div>

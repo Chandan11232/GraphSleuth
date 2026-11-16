@@ -79,7 +79,7 @@ export function InvestigationView() {
       <div className="flex items-start gap-3">
         <Button variant="ghost" size="sm" onClick={() => navigate(-1)}><ArrowLeft className="h-4 w-4" /></Button>
         <div className="flex-1 min-w-0">
-          <h1 className="text-2xl font-semibold truncate">{result?.title || 'Investigation'}</h1>
+          <h1 className="font-display text-3xl font-bold tracking-[-0.03em] truncate">{result?.title || 'Investigation'}</h1>
           <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
             {result?.repository_name && <span>{result.repository_name}</span>}
             <Badge variant={status === 'failed' ? 'destructive' : status === 'running' ? 'secondary' : 'default'}>

@@ -3,70 +3,74 @@
 @tailwind utilities;
 
 @layer base {
-  /* Cool paper page, ink sidebar, teal for the graph's own actions, amber-to-red for risk. */
+  /* Bone paper and green-black ink. Forest for actions on paper, lime for the same actions on ink.
+     Lime is also the highlighter: it marks what the agent found. Red and amber are kept for risk only. */
   :root {
-    --background: 210 25% 97%;
-    --foreground: 222 32% 13%;
-    --card: 0 0% 100%;
-    --card-foreground: 222 32% 13%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 32% 13%;
-    --primary: 176 70% 28%;
-    --primary-foreground: 170 40% 98%;
-    --secondary: 210 22% 93%;
-    --secondary-foreground: 222 30% 18%;
-    --muted: 210 22% 94%;
-    --muted-foreground: 218 13% 42%;
-    --accent: 176 35% 92%;
-    --accent-foreground: 176 70% 20%;
-    --destructive: 0 72% 48%;
+    --ink: 160 14% 7%;
+    --paper: 44 26% 92%;
+    --signal: 72 85% 58%;
+
+    --background: 44 26% 92%;
+    --foreground: 160 14% 9%;
+    --card: 45 34% 96%;
+    --card-foreground: 160 14% 9%;
+    --popover: 45 34% 96%;
+    --popover-foreground: 160 14% 9%;
+    --primary: 158 46% 16%;
+    --primary-foreground: 72 70% 88%;
+    --secondary: 44 16% 86%;
+    --secondary-foreground: 160 14% 14%;
+    --muted: 44 16% 87%;
+    --muted-foreground: 160 6% 34%;
+    --accent: 72 62% 82%;
+    --accent-foreground: 158 46% 13%;
+    --destructive: 6 74% 44%;
     --destructive-foreground: 0 0% 100%;
-    --border: 214 22% 88%;
-    --input: 214 22% 84%;
-    --ring: 176 70% 32%;
-    --radius: 0.5rem;
+    --border: 44 13% 78%;
+    --input: 44 10% 68%;
+    --ring: 158 46% 22%;
+    --radius: 3px;
 
-    --sidebar: 222 34% 12%;
-    --sidebar-foreground: 210 30% 92%;
-    --sidebar-muted: 218 16% 62%;
-    --sidebar-active: 176 55% 22%;
+    --sidebar: 160 14% 7%;
+    --sidebar-foreground: 46 22% 90%;
+    --sidebar-muted: 80 5% 58%;
+    --sidebar-active: 160 10% 14%;
 
-    --risk-high: 8 78% 52%;
-    --risk-medium: 35 92% 50%;
-    --risk-low: 214 16% 72%;
+    --risk-high: 8 78% 50%;
+    --risk-medium: 35 92% 48%;
+    --risk-low: 80 5% 62%;
   }
 
-  /* Dark: deep ink page, cards a step lighter, sidebar a step darker; teal and risk colours lifted for contrast. */
   .dark {
     color-scheme: dark;
-    --background: 222 30% 8%;
-    --foreground: 210 25% 92%;
-    --card: 222 26% 11%;
-    --card-foreground: 210 25% 92%;
-    --popover: 222 26% 11%;
-    --popover-foreground: 210 25% 92%;
-    --primary: 174 62% 40%;
-    --primary-foreground: 176 60% 8%;
-    --secondary: 220 20% 18%;
-    --secondary-foreground: 210 25% 90%;
-    --muted: 220 20% 15%;
-    --muted-foreground: 216 14% 64%;
-    --accent: 176 30% 17%;
-    --accent-foreground: 172 55% 78%;
-    --destructive: 0 70% 58%;
+    --background: 160 12% 6%;
+    --foreground: 46 20% 88%;
+    --card: 160 10% 9%;
+    --card-foreground: 46 20% 88%;
+    --popover: 160 10% 10%;
+    --popover-foreground: 46 20% 88%;
+    --primary: 72 85% 58%;
+    --primary-foreground: 160 30% 7%;
+    --secondary: 160 8% 15%;
+    --secondary-foreground: 46 20% 88%;
+    --muted: 160 8% 13%;
+    --muted-foreground: 80 5% 62%;
+    --accent: 72 30% 15%;
+    --accent-foreground: 72 80% 76%;
+    --destructive: 6 78% 60%;
     --destructive-foreground: 0 0% 100%;
-    --border: 220 18% 20%;
-    --input: 220 18% 26%;
-    --ring: 174 62% 45%;
+    --border: 160 7% 18%;
+    --input: 160 7% 26%;
+    --ring: 72 85% 58%;
 
-    --sidebar: 224 34% 6%;
-    --sidebar-foreground: 210 30% 92%;
-    --sidebar-muted: 218 14% 60%;
-    --sidebar-active: 176 50% 20%;
+    --sidebar: 160 14% 4%;
+    --sidebar-foreground: 46 22% 90%;
+    --sidebar-muted: 80 5% 58%;
+    --sidebar-active: 160 10% 12%;
 
-    --risk-high: 8 80% 60%;
+    --risk-high: 8 82% 60%;
     --risk-medium: 38 92% 56%;
-    --risk-low: 216 12% 42%;
+    --risk-low: 80 4% 40%;
   }
 }
 
@@ -83,6 +87,13 @@
   :focus-visible {
     @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
   }
+  input[type='checkbox'], input[type='radio'] {
+    accent-color: hsl(var(--primary));
+  }
+  ::selection {
+    background: hsl(var(--signal));
+    color: hsl(var(--ink));
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -93,7 +104,31 @@
 }
 
 .eyebrow {
-  @apply text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground;
+  @apply font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground;
+}
+
+/* A highlighter stroke behind text: slightly skewed and not quite covering the line, like a real pen. */
+.marked {
+  position: relative;
+  white-space: nowrap;
+  isolation: isolate;
+}
+.marked::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0.14em -0.12em 0.02em -0.1em;
+  background: hsl(var(--signal));
+  transform: skew(-9deg) rotate(-0.6deg);
+}
+
+/* The ink stage: page-width dark bands on the landing page and the graph scope in the app. */
+.stage {
+  background: hsl(var(--ink));
+  color: hsl(46 22% 90%);
+}
+.stage-rule {
+  border-color: rgb(255 255 255 / 0.1);
 }
 
 .react-flow__node-default {

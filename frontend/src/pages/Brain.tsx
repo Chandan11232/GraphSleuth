@@ -179,7 +179,7 @@ export function Brain() {
     <div className="px-6 py-6 lg:px-8 space-y-6 max-w-7xl">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold flex items-center gap-2"><Library className="h-6 w-6" /> Company brain</h1>
+          <h1 className="font-display text-4xl font-bold tracking-[-0.03em] flex items-center gap-3"><Library className="h-7 w-7" /> Company brain</h1>
           <p className="text-muted-foreground text-sm max-w-2xl">
             Issues, pull requests, reviews, decisions and CODEOWNERS, linked to the code graph. Ask why code is the way
             it is or who to talk to. Every answer cites the record behind it.

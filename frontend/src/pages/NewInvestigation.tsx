@@ -64,7 +64,7 @@ export function NewInvestigation() {
   return (
     <div className="px-6 py-6 lg:px-8 max-w-3xl space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">New investigation</h1>
+        <h1 className="font-display text-4xl font-bold tracking-[-0.03em]">New investigation</h1>
         <p className="text-muted-foreground text-sm">
           Paste a bug report. Stack traces, function names and error messages all help the agent find entry points in the graph.
         </p>

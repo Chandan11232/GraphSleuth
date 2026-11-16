@@ -1,10 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Bug,
   CheckCircle,
   Crosshair,
-  Flame,
   FlaskConical,
   Github,
   History,
@@ -15,9 +14,22 @@ import {
   Trash2,
   XCircle,
 } from "lucide-react";
-import { useRepoInsights, useRepositories, useRepositoryStats } from "../hooks";
+import {
+  useNeighborhood,
+  useRepoInsights,
+  useRepositories,
+  useRepositoryStats,
+} from "../hooks";
+import {
+  Graph3D,
+  kindColor,
+  type G3Edge,
+  type G3Node,
+} from "../components/three/Graph3D";
 import {
   errorMessage,
+  type GraphResponse,
+  type Hotspot,
   type Repository,
   type RiskyChange,
 } from "../services/api";
@@ -159,9 +171,149 @@ function RiskyRow({
 
 function Stat({ value, label }: { value: number | undefined; label: string }) {
   return (
-    <div className="text-center">
-      <p className="text-xl font-bold tabular-nums">{value ?? 0}</p>
-      <p className="text-[11px] text-muted-foreground">{label}</p>
+    <div>
+      <p className="font-display text-2xl font-bold tabular-nums leading-none tracking-[-0.02em]">
+        {value ?? 0}
+      </p>
+      <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+        {label}
+      </p>
+    </div>
+  );
+}
+
+/** Short name for a node label: the last part of a qualified name, without the module path. */
+const shortLabel = (label: string) =>
+  /^[\w.]+$/.test(label) ? label.split(".").pop() || label : label;
+
+/**
+ * The selected repository in 3D: one function and everything one hop from it. Pick a hotspot on the right,
+ * or click any function in the graph, to move the centre there.
+ */
+function Scope({
+  graph,
+  hotspots,
+  focusId,
+  onFocus,
+}: {
+  graph: GraphResponse | null;
+  hotspots: Hotspot[];
+  focusId: string | null;
+  onFocus: (functionId: string) => void;
+}) {
+  const nodes = useMemo<G3Node[]>(
+    () =>
+      (graph?.nodes ?? []).map((n) => ({
+        id: n.id,
+        label: shortLabel(n.label),
+        kind: n.type,
+      })),
+    [graph],
+  );
+  const edges = useMemo<G3Edge[]>(
+    () =>
+      (graph?.edges ?? []).map((e) => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        type: e.type,
+      })),
+    [graph],
+  );
+  const centre = graph?.nodes.find((n) => n.properties.id === focusId);
+  const kinds = [...new Set(nodes.map((n) => n.kind))];
+  const top = Math.max(...hotspots.map((h) => h.score), 0.0001);
+
+  return (
+    <div className="stage grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_19rem]">
+      <div className="relative h-[340px] lg:h-[440px]">
+        {nodes.length > 0 ? (
+          <Graph3D
+            nodes={nodes}
+            edges={edges}
+            focusId={centre?.id}
+            labels={nodes.length > 16 ? "front" : "all"}
+            onSelect={(id) => {
+              const hit = graph?.nodes.find((n) => n.id === id);
+              if (hit?.type === "Function" && hit.properties.id)
+                onFocus(hit.properties.id);
+            }}
+            ariaLabel={`Graph of ${centre?.label ?? "the selected function"} and the ${nodes.length - 1} nodes one hop from it`}
+          />
+        ) : (
+          <p className="flex h-full items-center justify-center font-mono text-xs text-white/40">
+            {focusId ? "Reading the graph…" : "No call graph yet."}
+          </p>
+        )}
+        <div className="pointer-events-none absolute left-4 top-3.5 font-mono text-[11px] text-white/50">
+          <p className="uppercase tracking-[0.1em]">One hop from</p>
+          <p className="mt-1 text-sm font-semibold text-white/90">
+            {centre ? shortLabel(centre.label) : "…"}
+          </p>
+        </div>
+        <ul className="pointer-events-none absolute bottom-3 left-4 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10px] text-white/50">
+          {kinds.map((k) => (
+            <li key={k} className="flex items-center gap-1.5">
+              <span
+                className="h-1.5 w-1.5 rounded-full"
+                style={{ background: kindColor(k) }}
+              />
+              {k}
+            </li>
+          ))}
+        </ul>
+        <p className="pointer-events-none absolute bottom-3 right-4 font-mono text-[10px] text-white/35">
+          drag to orbit · click a function to move there
+        </p>
+      </div>
+
+      <div className="border-t stage-rule lg:border-l lg:border-t-0">
+        <p className="px-4 pb-2 pt-3.5 font-mono text-[11px] uppercase tracking-[0.1em] text-white/50">
+          Hotspots · PageRank over calls
+        </p>
+        <ol>
+          {hotspots.map((h, i) => {
+            const on = h.id === focusId;
+            return (
+              <li key={h.id}>
+                <button
+                  type="button"
+                  onClick={() => onFocus(h.id)}
+                  aria-pressed={on}
+                  className={`relative grid w-full grid-cols-[1.25rem_minmax(0,1fr)_auto] items-baseline gap-x-2 border-t stage-rule px-4 py-2.5 text-left transition-colors focus-visible:ring-offset-0 ${on ? "bg-white/[0.07]" : "hover:bg-white/[0.04]"}`}
+                >
+                  <span className="font-mono text-[10px] tabular-nums text-white/40">
+                    {i + 1}
+                  </span>
+                  <span className="min-w-0">
+                    <span
+                      className={`block truncate font-mono text-xs ${on ? "text-signal" : "text-white/90"}`}
+                    >
+                      {h.name}
+                    </span>
+                    <span className="block truncate text-[11px] text-white/40">
+                      {h.file_path}
+                    </span>
+                  </span>
+                  <span
+                    className={`font-mono text-[10px] ${h.tests ? "text-white/50" : "text-[#ffc24a]"}`}
+                  >
+                    {h.tests ? `${h.tests} ${h.tests === 1 ? "test" : "tests"}` : "untested"}
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    className="absolute bottom-0 left-0 h-px bg-signal"
+                    style={{ width: `${(h.score / top) * 100}%` }}
+                  />
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+        {!hotspots.length && (
+          <p className="px-4 pb-4 text-sm text-white/50">No call graph yet.</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -196,6 +348,19 @@ export function Dashboard() {
     selected?.id ?? null,
     selected?.status === "ready",
     commitLimit,
+  );
+
+  // The scope centres on the function the user picked, or the top hotspot until they pick one.
+  const [picked, setPicked] = useState<{ repo: string; fn: string } | null>(
+    null,
+  );
+  const focusId =
+    (picked && picked.repo === selected?.id ? picked.fn : null) ??
+    hotspots[0]?.id ??
+    null;
+  const neighborhood = useNeighborhood(
+    selected?.status === "ready" ? selected.id : null,
+    focusId,
   );
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -233,8 +398,10 @@ export function Dashboard() {
     <div className="px-6 py-6 lg:px-8 space-y-8 max-w-7xl">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold">Repositories</h1>
-          <p className="text-muted-foreground text-sm">
+          <h1 className="font-display text-4xl font-bold tracking-[-0.03em]">
+            Repositories
+          </h1>
+          <p className="mt-1 text-muted-foreground text-sm">
             Each repository becomes its own FalkorDB graph of functions, calls,
             tests, commits and people.
           </p>
@@ -255,7 +422,7 @@ export function Dashboard() {
           <Card
             key={repo.id}
             onClick={() => setSelectedId(repo.id)}
-            className={`cursor-pointer transition-shadow hover:shadow-md ${selected?.id === repo.id ? "ring-2 ring-primary" : ""}`}
+            className={`cursor-pointer transition-colors hover:border-foreground ${selected?.id === repo.id ? "border-foreground shadow-[4px_4px_0_hsl(var(--foreground))]" : ""}`}
           >
             <CardHeader className="pb-3">
               <div className="flex items-start justify-between gap-2">
@@ -275,7 +442,7 @@ export function Dashboard() {
             </CardHeader>
             <CardContent className="space-y-3">
               {repo.status === "ready" && (
-                <div className="grid grid-cols-4 gap-2 py-2 border-y">
+                <div className="grid grid-cols-4 gap-2 py-3 border-y">
                   <Stat value={repo.stats.functions} label="functions" />
                   <Stat value={repo.stats.calls} label="calls" />
                   <Stat value={repo.stats.tests} label="tests" />
@@ -352,7 +519,10 @@ export function Dashboard() {
           <div className="flex items-end justify-between gap-4 flex-wrap">
             <div>
               <p className="eyebrow">Selected repository</p>
-              <h2 id="selected-repo" className="text-xl font-semibold">
+              <h2
+                id="selected-repo"
+                className="font-display text-3xl font-bold tracking-[-0.03em]"
+              >
                 {selected.name}
               </h2>
             </div>
@@ -362,6 +532,13 @@ export function Dashboard() {
               {selected.stats.people ?? 0} people
             </p>
           </div>
+
+          <Scope
+            graph={neighborhood}
+            hotspots={hotspots}
+            focusId={focusId}
+            onFocus={(fn) => setPicked({ repo: selected.id, fn })}
+          />
 
           <div className="grid gap-4 lg:grid-cols-3 items-start">
             <Card className="lg:col-span-2">
@@ -428,50 +605,6 @@ export function Dashboard() {
             </Card>
 
             <div className="space-y-4">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <Flame className="h-4 w-4 text-risk-high" /> Hotspots
-                    <span className="font-normal text-muted-foreground">
-                      PageRank over calls
-                    </span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ol className="space-y-2">
-                    {hotspots.map((h, i) => (
-                      <li
-                        key={h.id}
-                        className="flex items-center justify-between text-sm gap-2"
-                      >
-                        <span className="text-xs text-muted-foreground tabular-nums w-4">
-                          {i + 1}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="font-mono text-xs truncate">{h.name}</p>
-                          <p className="text-[11px] text-muted-foreground truncate">
-                            {h.file_path}
-                          </p>
-                        </div>
-                        <Badge
-                          variant={h.tests ? "secondary" : "outline"}
-                          className={
-                            h.tests ? "" : "text-amber-800 border-amber-300 dark:text-amber-300 dark:border-amber-500/40"
-                          }
-                        >
-                          {h.tests ? `${h.tests} tests` : "untested"}
-                        </Badge>
-                      </li>
-                    ))}
-                  </ol>
-                  {!hotspots.length && (
-                    <p className="text-sm text-muted-foreground">
-                      No call graph yet.
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm flex items-center gap-2">

@@ -131,3 +131,23 @@ export function useRepoInsights(
   }, [repoId, ready, commitLimit]);
   return { hotspots, riskyChanges, investigations };
 }
+
+/** The nodes one hop from a function, for the dashboard's 3D scope. */
+export function useNeighborhood(repoId: string | null, functionId: string | null) {
+  const [graph, setGraph] = useState<GraphResponse | null>(null);
+  useEffect(() => {
+    if (!repoId || !functionId) {
+      setGraph(null);
+      return;
+    }
+    let stale = false;
+    api
+      .get(`/graph/${repoId}/function/${functionId}`)
+      .then((r) => !stale && setGraph(r.data))
+      .catch(() => !stale && setGraph(null));
+    return () => {
+      stale = true;
+    };
+  }, [repoId, functionId]);
+  return graph;
+}
